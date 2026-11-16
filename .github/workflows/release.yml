@@ -48,7 +48,7 @@ jobs:
           cp -r packaging LICENSE README.md SECURITY.md CHANGELOG.md browser-extension "dist/$d/"
           tar --sort=name --owner=0 --group=0 --numeric-owner --mtime=@1700000000 -czf "dist/$d.tar.gz" -C dist "$d"
 
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: 17
