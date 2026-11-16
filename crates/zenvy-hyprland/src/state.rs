@@ -175,6 +175,23 @@ impl Compositor for HyprlandAdapter {
 }
 
 impl HyprlandAdapter {
+    /// Moves the pointer to a layout position. Only integers are ever interpolated.
+    pub async fn cursor_move(&self, x: i32, y: i32) -> Result<()> {
+        if !(-100_000..=100_000).contains(&x) || !(-100_000..=100_000).contains(&y) {
+            return Err(Error::InvalidCommand("position out of range"));
+        }
+        let req = match self.mode {
+            DispatchMode::Lua => format!("dispatch hl.dsp.cursor.move({{ x = {x}, y = {y} }})"),
+            DispatchMode::Legacy => format!("dispatch movecursor {x} {y}"),
+        };
+        let reply = self.client.request(&req).await?;
+        if reply.trim() == "ok" {
+            Ok(())
+        } else {
+            Err(Error::Rejected(reply.trim().chars().take(200).collect()))
+        }
+    }
+
     /// Address of the focused window, if any.
     pub async fn active_window(&self) -> Result<Option<Address>> {
         let v: serde_json::Value = self.client.json("activewindow").await?;

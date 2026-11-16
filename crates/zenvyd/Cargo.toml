@@ -18,6 +18,7 @@ zenvy-input.workspace = true
 zenvy-audio.workspace = true
 zenvy-stream.workspace = true
 zenvy-power.workspace = true
+zenvy-screen.workspace = true
 zenvy-brightness.workspace = true
 zenvy-media.workspace = true
 serde.workspace = true

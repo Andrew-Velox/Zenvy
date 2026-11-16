@@ -13,6 +13,7 @@ zenvy-audio.workspace = true
 zenvy-stream.workspace = true
 zenvy-icons.workspace = true
 zenvy-power.workspace = true
+zenvy-screen.workspace = true
 zeroize.workspace = true
 tokio-util.workspace = true
 bytes.workspace = true

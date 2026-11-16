@@ -2317,6 +2317,7 @@ dependencies = [
  "zenvy-media",
  "zenvy-power",
  "zenvy-proto",
+ "zenvy-screen",
  "zenvy-stream",
  "zeroize",
 ]
@@ -2351,6 +2352,16 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror",
+]
+
+[[package]]
+name = "zenvy-screen"
+version = "0.0.1"
+dependencies = [
+ "tempfile",
+ "tokio",
+ "tracing",
+ "zenvy-proto",
 ]
 
 [[package]]
@@ -2389,6 +2400,7 @@ dependencies = [
  "zenvy-power",
  "zenvy-profiler",
  "zenvy-proto",
+ "zenvy-screen",
  "zenvy-stream",
 ]
 

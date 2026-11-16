@@ -8,6 +8,10 @@ if pgrep -x zenvyd >/dev/null; then
   echo "and the virtual input device names with the sandbox agent, and the results would be meaningless."
   exit 3
 fi
+if command -v hyprctl >/dev/null && hyprctl clients -j 2>/dev/null | grep -q '"class": "zenvy-e2e'; then
+  echo "A scratch window from an earlier test run (class zenvy-e2e*) is still open. Close it first: the tests would pick it up instead of their own."
+  exit 3
+fi
 TMP="$(mktemp -d)"; PIDS=()
 cleanup() { for p in "${PIDS[@]}"; do kill "$p" 2>/dev/null; done; sleep 0.4; for p in "${PIDS[@]}"; do kill -9 "$p" 2>/dev/null; done; rm -rf "$TMP"; }
 trap cleanup EXIT
@@ -25,7 +29,7 @@ J
 cp "$ROOT/tests/fakes/pactl" "$TMP/bin/pactl"
 cp "$ROOT/tests/fakes/ddcutil" "$TMP/bin/ddcutil"
 for f in loginctl systemctl busctl wl-copy wl-paste xdg-open; do cp "$ROOT/tests/fakes/$f" "$TMP/bin/$f"; done
-cp "$ROOT/tests/fakes/parec" "$TMP/bin/parec"; cp "$ROOT/tests/fakes/notify-send" "$TMP/bin/notify-send"
+cp "$ROOT/tests/fakes/grim" "$TMP/bin/grim"; cp "$ROOT/tests/fakes/parec" "$TMP/bin/parec"; cp "$ROOT/tests/fakes/notify-send" "$TMP/bin/notify-send"
 echo '{"ddc":[{"bus":2,"connector":"card1-HDMI-A-1","model":"Fake Monitor","serial":"SERIAL-SECRET-999","cur":50,"max":100}]}' > "$TMP/fake/bright.json"
 
 # file transfer: a private inbox and a 3 MB limit

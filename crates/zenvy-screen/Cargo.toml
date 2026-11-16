@@ -1,0 +1,14 @@
+[package]
+name = "zenvy-screen"
+version = "0.0.1"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+description = "Screen preview for the phone: grim JPEG frames only while somebody views, and tap-to-click mapping"
+
+[dependencies]
+zenvy-proto.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

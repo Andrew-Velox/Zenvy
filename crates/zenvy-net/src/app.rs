@@ -44,6 +44,8 @@ pub struct NetConfig {
     pub clipboard: Option<crate::clipboard::ClipboardTools>,
     /// `None` when file transfer is off.
     pub files: Option<Arc<crate::files::Transfers>>,
+    /// `None` when `grim` or screen capture is missing: no screen preview.
+    pub screen: Option<zenvy_screen::ScreenStreamer>,
 }
 
 pub struct App {

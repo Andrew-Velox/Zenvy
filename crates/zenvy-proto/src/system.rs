@@ -343,6 +343,7 @@ pub const KNOWN_SCOPES: &[&str] = &[
     "listen",
     "power",
     "unlock",
+    "screen",
     "exec",
 ];
 
@@ -573,5 +574,160 @@ mod power_tests {
                 "{bad:?}"
             );
         }
+    }
+}
+
+// ---------------------------------------------------------------- screen preview
+
+/// Binary WebSocket screen frame: `[SCREEN_FRAME_TAG][u32 seq LE][u16 width LE][u16 height LE][JPEG]`.
+pub const SCREEN_FRAME_TAG: u8 = 0x02;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum ScreenPreset {
+    Low,
+    #[default]
+    Medium,
+    High,
+}
+
+impl ScreenPreset {
+    /// Longest image side in pixels, JPEG quality and target frames per second.
+    pub fn max_width(self) -> u32 {
+        match self {
+            ScreenPreset::Low => 640,
+            ScreenPreset::Medium => 960,
+            ScreenPreset::High => 1280,
+        }
+    }
+    pub fn quality(self) -> u8 {
+        match self {
+            ScreenPreset::Low => 45,
+            ScreenPreset::Medium => 55,
+            ScreenPreset::High => 65,
+        }
+    }
+    pub fn fps(self) -> u32 {
+        match self {
+            ScreenPreset::Low => 4,
+            ScreenPreset::Medium => 8,
+            ScreenPreset::High => 12,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum ClickKind {
+    #[default]
+    Left,
+    Right,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "cmd", rename_all = "snake_case")]
+pub enum ScreenCommand {
+    /// Start viewing a monitor (default: the focused one).
+    Start {
+        #[serde(default)]
+        output: Option<String>,
+        #[serde(default)]
+        preset: Option<ScreenPreset>,
+    },
+    Stop,
+    Preset {
+        preset: ScreenPreset,
+    },
+    /// A tap on the preview: `x` and `y` are fractions (0..1) of the monitor as it is shown.
+    Click {
+        x: f64,
+        y: f64,
+        #[serde(default)]
+        button: ClickKind,
+        #[serde(default)]
+        count: Option<u8>,
+    },
+}
+
+/// A monitor connector name as Hyprland reports it (`HDMI-A-1`).
+pub fn valid_output(s: &str) -> bool {
+    !s.is_empty()
+        && s.len() <= 40
+        && s.chars()
+            .all(|c| c.is_ascii_alphanumeric() || "._:-".contains(c))
+}
+
+impl ScreenCommand {
+    pub fn validate(&self) -> Result<(), &'static str> {
+        match self {
+            ScreenCommand::Start {
+                output: Some(o), ..
+            } if !valid_output(o) => Err("bad monitor name"),
+            ScreenCommand::Click { x, y, count, .. } => {
+                if !(x.is_finite()
+                    && y.is_finite()
+                    && (0.0..=1.0).contains(x)
+                    && (0.0..=1.0).contains(y))
+                {
+                    Err("the point must be inside the screen")
+                } else if count.is_some_and(|c| !(1..=2).contains(&c)) {
+                    Err("a click is one or two taps")
+                } else {
+                    Ok(())
+                }
+            }
+            _ => Ok(()),
+        }
+    }
+}
+
+#[cfg(test)]
+mod screen_tests {
+    use super::*;
+
+    #[test]
+    fn screen_commands_are_validated() {
+        let c = |j: &str| serde_json::from_str::<ScreenCommand>(j);
+        assert!(c(r#"{"cmd":"start"}"#).unwrap().validate().is_ok());
+        assert_eq!(
+            c(r#"{"cmd":"start","preset":"high","output":"HDMI-A-1"}"#).unwrap(),
+            ScreenCommand::Start {
+                output: Some("HDMI-A-1".into()),
+                preset: Some(ScreenPreset::High)
+            }
+        );
+        assert!(
+            c(r#"{"cmd":"start","output":"a;b"}"#)
+                .unwrap()
+                .validate()
+                .is_err()
+                && c(r#"{"cmd":"start","output":"../x"}"#)
+                    .unwrap()
+                    .validate()
+                    .is_err()
+        );
+        assert!(c(r#"{"cmd":"click","x":0.5,"y":0.25}"#)
+            .unwrap()
+            .validate()
+            .is_ok());
+        for bad in [
+            r#"{"cmd":"click","x":1.5,"y":0.2}"#,
+            r#"{"cmd":"click","x":-0.1,"y":0.2}"#,
+            r#"{"cmd":"click","x":0.1,"y":0.2,"count":3}"#,
+            r#"{"cmd":"click","x":0.1,"y":0.2,"count":0}"#,
+        ] {
+            assert!(c(bad).unwrap().validate().is_err(), "{bad}");
+        }
+        for bad in [
+            r#"{"cmd":"start","preset":"ultra"}"#,
+            r#"{"cmd":"record"}"#,
+            r#"{"cmd":"click","x":"a","y":1}"#,
+        ] {
+            assert!(c(bad).is_err(), "{bad}");
+        }
+        assert!(
+            ScreenPreset::Low.fps() < ScreenPreset::High.fps()
+                && ScreenPreset::Low.max_width() < ScreenPreset::High.max_width()
+        );
     }
 }

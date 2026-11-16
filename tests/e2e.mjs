@@ -226,6 +226,52 @@ if (w2) {
       ok(r?.t === 'err' && r.data.code === 'invalid_command', `rejected: ${why}`);
     }
 
+    // --- screen preview: tapping the preview clicks on the PC (fake grim: the real screen is never captured).
+    if (!(await refocus('the screen click test'))) break scratchBlock;
+    { const FD = process.env.ZENVY_FAKE_DIR; const sc = async (id, data) => { c.send({ t: 'screen', id, data }); return c.until(m => m.id === id); };
+      const readCalls = () => (fsx.existsSync(`${FD}/grim.calls`) ? fsx.readFileSync(`${FD}/grim.calls`, 'utf8').split('\n').filter(Boolean) : []);
+      const no = await sc('s0', { cmd: 'start' });
+      ok(no?.t === 'err' && no.data.code === 'forbidden' && no.data.message.includes(`zenvyd grant ${dev} screen`), 'seeing the screen needs its own permission, and the refusal shows the command');
+      ok(readCalls().length === 0, 'nothing is captured while nobody may view');
+      await admin({ op: 'grant', id: dev, scope: 'screen' }); await sleep(300);
+      const mons = JSON.parse(sh('hyprctl', ['monitors', '-j'])); const mon = mons.find(m => m.id === geo.monitor) || mons[0];
+      const [pw, ph] = mon.transform % 2 === 1 ? [mon.height, mon.width] : [mon.width, mon.height]; const lw = pw / mon.scale, lh = ph / mon.scale;
+      const nx = (cx - mon.x) / (lw - 1), ny = (cy - mon.y) / (lh - 1);
+      ok(nx >= 0 && nx <= 1 && ny >= 0 && ny <= 1, 'the scratch window centre is on the monitor that will be previewed');
+      // refused input counts toward a connection's "too many bad messages" limit, so it is checked on a throwaway connection
+      const cb = await wsConnect(phone, dev); await cb.until(m => m.t === 'snapshot'); const sb = async (id, data) => { cb.send({ t: 'screen', id, data }); return cb.until(m => m.id === id); };
+      ok((await sb('s0b', { cmd: 'start', output: 'bad;name' }))?.data.code === 'invalid_command', 'a bad monitor name is refused');
+      ok((await sc('s0c', { cmd: 'start', output: 'NOPE-9' }))?.data.code === 'not_found', 'a monitor that does not exist is refused');
+      const st = await sc('s1', { cmd: 'start', output: mon.name, preset: 'low' });
+      ok(st?.t === 'screen' && st.data.state === 'started' && st.data.output === mon.name && st.data.preset === 'low' && st.data.width === Math.round(lw) && st.data.height === Math.round(lh), 'viewing starts and reports the monitor, preset and its size');
+      const endF = Date.now() + 4000; while (Date.now() < endF && !c.bins.some(b => b.d[0] === 2)) await sleep(50);
+      const fr = c.bins.find(b => b.d[0] === 2)?.d;
+      ok(!!fr && fr.readUInt16LE(5) === 64 && fr.readUInt16LE(7) === 48 && fr[9] === 0xff && fr[10] === 0xd8, 'a frame arrives: tag 0x02, sequence, width and height, then the JPEG');
+      ok(readCalls()[0] === `-t jpeg -q 45 -s ${Math.min(1, 640 / Math.round(lw)).toFixed(3)} -c -o ${mon.name} -`, `grim is run with a fixed argument list (${readCalls()[0]})`);
+      let kn = 0;
+      const clicks = async (data, want, what, code = 0x110) => {
+        if (!(await refocus(what))) return null; const b0 = evs.length;
+        const kid = 'sk' + (++kn); c.send({ t: 'screen', id: kid, data }); const r = await c.until(m => m.id === kid); await sleep(300);
+        const ev = evs.slice(b0).filter(e => e.dev === 'p' && e.type === 1 && e.code === code).map(e => e.value).join();
+        ok(r?.t === 'ack' && ev === want, `${what} (${ev})`); return r;
+      };
+      await clicks({ cmd: 'click', x: nx, y: ny }, '1,0', 'a tap on the preview is one left click');
+      const cur = sh('hyprctl', ['cursorpos']).trim().split(/,\s*/).map(Number);
+      ok(Math.abs(cur[0] - cx) <= 1 && Math.abs(cur[1] - cy) <= 1, `the pointer was moved to the tapped spot (${cur} wanted ${cx},${cy})`);
+      await clicks({ cmd: 'click', x: nx, y: ny, count: 2 }, '1,0,1,0', 'a double tap is a double click');
+      await clicks({ cmd: 'click', x: nx, y: ny, button: 'right' }, '1,0', 'a long press is a right click', 0x111);
+      const b1 = evs.length;
+      for (const [x, y] of [[1.2, 0.5], [-0.1, 0.5], [0.5, 2]]) { const r = await sb('sx' + (++kn), { cmd: 'click', x, y }); ok(r?.data.code === 'invalid_command', `a tap outside the screen is refused (${x},${y})`); }
+      cb.ws.close();
+      await sleep(200); ok(evs.slice(b1).filter(e => e.type === 1).length === 0, 'and nothing was clicked');
+      ok((await sc('sp', { cmd: 'preset', preset: 'high' }))?.data.preset === 'high', 'the quality can change while viewing');
+      await sleep(600); ok(readCalls().at(-1).startsWith('-t jpeg -q 65 '), 'and the next frame uses it');
+      ok((await sc('s9', { cmd: 'stop' }))?.data.state === 'stopped', 'stopping works');
+      await sleep(400); const n0 = readCalls().length; await sleep(700);
+      ok(readCalls().length === n0, 'once nobody views, grim is no longer run');
+      const nc = await sc('sn', { cmd: 'click', x: nx, y: ny }); ok(nc?.t === 'err' && nc.data.code === 'not_found', 'a tap without viewing clicks nothing');
+    }
+
     // --- unlock from the phone: the password is typed through the virtual keyboard into the scratch window
     { const FD = process.env.ZENVY_FAKE_DIR, lockedPath = `${FD}/locked`;
       try { fsx.unlinkSync(lockedPath); } catch {}
@@ -647,6 +693,31 @@ else {
     ok(refused && granted >= 1 && granted <= 4, `a phone cannot hold more than four waiting offers (${granted} more were granted before the refusal)`);
     cf.ws.close(); }
 
+  console.log('-- screen preview (lock, disconnect, audit)');
+  { const FD = process.env.ZENVY_FAKE_DIR, lockedPath = `${FD}/locked`, calls = () => (fsx.existsSync(`${FD}/grim.calls`) ? fsx.readFileSync(`${FD}/grim.calls`, 'utf8').split('\n').filter(Boolean).length : 0);
+    const cv = await wsConnect(phone, dev); const sn = await cv.until(m => m.t === 'snapshot'); ok(sn.data.screen?.enabled === true, 'the phone is told the screen preview is available');
+    const sc = async (id, data) => { cv.send({ t: 'screen', id, data }); return cv.until(m => m.id === id); };
+    ok((await sc('v1', { cmd: 'start' }))?.data.state === 'started', 'viewing starts on the focused monitor by default');
+    const e0 = Date.now() + 4000; while (Date.now() < e0 && cv.bins.length < 3) await sleep(50);
+    const seqs = cv.bins.filter(b => b.d[0] === 2).map(b => b.d.readUInt32LE(1)); ok(seqs.length >= 3 && seqs.every((x, i) => i === 0 || x > seqs[i - 1]), `frames keep coming with rising sequence numbers (${seqs.length})`);
+    // locked: viewing stops, nothing more is sent, and it cannot be restarted
+    const n0 = cv.msgs.length; fsx.writeFileSync(lockedPath, '');
+    const stopped = await cv.until(m => m.t === 'screen' && m.data.state === 'stopped' && /locked/i.test(m.data.reason || ''), 8000);
+    ok(!!stopped, 'when the PC locks, the phone is told viewing has stopped');
+    await sleep(500); const nb = cv.bins.length; const c0 = calls(); await sleep(900);
+    ok(cv.bins.length === nb && calls() === c0, 'after the lock no frame is sent and grim stops running');
+    ok((await sc('v2', { cmd: 'start' }))?.data.code === 'pc_locked', 'starting while the PC is locked is refused');
+    const n1 = cv.msgs.length; fsx.unlinkSync(lockedPath);
+    const end2 = Date.now() + 6000; while (Date.now() < end2 && !cv.msgs.slice(n1).some(m => m.t === 'evt' && m.data.topic === 'power.state' && m.data.value.lock === 'unlocked')) await sleep(100);
+    // a phone that disappears must not leave the capture running
+    ok((await sc('v3', { cmd: 'start' }))?.data.state === 'started', 'viewing can start again after unlocking');
+    await sleep(500); cv.ws.close(); await sleep(900); const c1 = calls(); await sleep(900);
+    ok(calls() === c1, 'a phone that disconnects while viewing stops the capture');
+    const a = (process.env.ZENVY_AUDIT && fsx.existsSync(process.env.ZENVY_AUDIT)) ? fsx.readFileSync(process.env.ZENVY_AUDIT, 'utf8') : '';
+    ok(a.includes('"screen_start"') && a.includes('"screen_stop"'), 'starting and stopping the view is audit-logged');
+    const nl = fsx.readFileSync(`${FD}/notify.log`, 'utf8'); ok(/is viewing this PC's screen/.test(nl) && /stopped viewing this PC's screen/.test(nl), 'the person at the PC is told when the screen is viewed and when it stops');
+  }
+
   console.log('-- power and lock (fake systemctl/loginctl: nothing real is ever suspended, restarted or locked)');
   { const FD = process.env.ZENVY_FAKE_DIR;
     const plogPath = `${FD}/power.log`, lockedPath = `${FD}/locked`;
@@ -675,7 +746,7 @@ else {
     const cl = await wsConnect(phone, dev); const snapL = await cl.until(m => m.t === 'snapshot');
     ok(snapL.data.power.lock === 'locked' && snapL.data.desktop.windows.length === 0 && snapL.data.desktop.workspaces.length === 0 && snapL.data.browser.browsers.length === 0, 'a phone that connects while the PC is locked is sent no windows, workspaces or tabs');
     const asked = async (type, id, data) => { cl.send({ t: type, id, data }); return cl.until(m => m.id === id); };
-    for (const [type, id, data, why] of [['cmd', 'lk1', { cmd: 'switch_workspace', id: 1 }, 'switching workspaces'], ['input', 'lk2', { cmd: 'pointer_move', dx: 0, dy: 0 }, 'the pointer'], ['browser', 'lk3', { cmd: 'close_tab', browser: 1, tab: 1 }, 'closing browser tabs'], ['favicon', 'lk7', { host: 'docs.rs' }, 'site icons'], ['action', 'lk8', { cmd: 'run', id: 'mark' }, 'custom actions'], ['clipboard', 'lk9', { cmd: 'get' }, 'the clipboard'], ['file', 'lk10', { cmd: 'offer', name: 'a.txt', size: 5 }, 'file transfer']]) {
+    for (const [type, id, data, why] of [['cmd', 'lk1', { cmd: 'switch_workspace', id: 1 }, 'switching workspaces'], ['input', 'lk2', { cmd: 'pointer_move', dx: 0, dy: 0 }, 'the pointer'], ['browser', 'lk3', { cmd: 'close_tab', browser: 1, tab: 1 }, 'closing browser tabs'], ['favicon', 'lk7', { host: 'docs.rs' }, 'site icons'], ['action', 'lk8', { cmd: 'run', id: 'mark' }, 'custom actions'], ['clipboard', 'lk9', { cmd: 'get' }, 'the clipboard'], ['file', 'lk10', { cmd: 'offer', name: 'a.txt', size: 5 }, 'file transfer'], ['screen', 'lk11', { cmd: 'start' }, 'the screen preview']]) {
       const r = await asked(type, id, data); ok(r?.t === 'err' && r.data.code === 'pc_locked', `refused while locked: ${why}`);
     }
     ok((await asked('audio', 'lk4', { cmd: 'set_volume', percent: 33 }))?.t === 'ack', 'volume still works while locked');

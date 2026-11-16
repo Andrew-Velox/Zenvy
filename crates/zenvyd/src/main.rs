@@ -608,6 +608,26 @@ async fn keyboard_layout_is_us() -> bool {
     }
 }
 
+/// The screen preview needs `grim` and a compositor that allows screen capture (the `screen.capture` capability).
+fn build_screen(sc: &Scan) -> Option<zenvy_screen::ScreenStreamer> {
+    let grim = sc.profile.software_hints.get("grim").cloned().flatten();
+    let cap = sc
+        .registry
+        .get("screen.capture")
+        .map(|c| c.state == zenvy_proto::CapState::Available)
+        .unwrap_or(false);
+    match (grim, cap) {
+        (Some(g), true) => {
+            eprintln!("screen preview: ready (grim); phones need the 'screen' permission (zenvyd grant <id> screen)");
+            Some(zenvy_screen::ScreenStreamer::new(g))
+        }
+        _ => {
+            eprintln!("screen preview: not available (needs grim and screen capture)");
+            None
+        }
+    }
+}
+
 /// Listening needs `parec` and a running audio server (the `audio.listen` capability).
 fn build_stream(sc: &Scan) -> Option<std::sync::Arc<zenvy_stream::AudioStreamer>> {
     if sc.registry.get("audio.listen")?.state != zenvy_proto::CapState::Available {
@@ -757,6 +777,7 @@ async fn serve_cmd() -> Result<(), Box<dyn std::error::Error>> {
         features: cfg.features.clone(),
         clipboard: build_clipboard(&sc),
         files: build_files(&cfg),
+        screen: build_screen(&sc),
         actions: cfg
             .actions
             .iter()

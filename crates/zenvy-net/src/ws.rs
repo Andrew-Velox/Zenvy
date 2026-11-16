@@ -186,6 +186,8 @@ struct Ctx {
     muting: bool,
     /// A suspend/reboot/power-off this phone asked for and has not confirmed yet: (token, action, deadline).
     power_pending: Option<(String, zenvy_proto::PowerAction, std::time::Instant)>,
+    /// Present while this phone is viewing the PC's screen.
+    screen: Option<ScreenSession>,
     /// A confirm-first action this phone asked for: (token, action id, deadline).
     action_pending: Option<(String, String, std::time::Instant)>,
 }
@@ -207,6 +209,7 @@ async fn session(app: Arc<App>, ip: IpAddr, mut s: WebSocket) {
         scopes,
         held: HashSet::new(),
         listener: None,
+        screen: None,
         muting: false,
         power_pending: None,
         action_pending: None,
@@ -268,9 +271,18 @@ async fn session(app: Arc<App>, ip: IpAddr, mut s: WebSocket) {
                 let Some(f) = frame else { break };
                 if s.send(Message::Binary(axum::body::Bytes::copy_from_slice(&f))).await.is_err() { break }
             }
+            // Screen frames for a phone that is viewing (never while the PC is locked)
+            frame = async { match ctx.screen.as_mut() { Some(v) => v.viewer.recv().await, None => std::future::pending().await } } => {
+                let Some(f) = frame else { break };
+                if app.is_locked() {
+                    stop_screen(&app, &mut ctx).await;
+                    if !send(&mut s, json!({ "v": 1, "t": "screen", "data": { "state": "stopped", "reason": "The PC is locked" } })).await { break }
+                } else if s.send(Message::Binary(axum::body::Bytes::copy_from_slice(&f))).await.is_err() { break }
+            }
             ev = hub.recv() => match ev {
                 Ok(Hub::Scopes(id)) if id == device_id => {
                     ctx.scopes = app.store.lock().unwrap().get(&device_id).map(|d| d.scopes.iter().cloned().collect()).unwrap_or_default();
+                    if !ctx.scopes.contains("screen") && ctx.screen.is_some() { stop_screen(&app, &mut ctx).await; let _ = send(&mut s, json!({ "v": 1, "t": "screen", "data": { "state": "stopped", "reason": "Permission removed" } })).await; }
                     if !ctx.scopes.contains("listen") && ctx.listener.is_some() { stop_listening(&app, &mut ctx).await; let _ = send(&mut s, json!({ "v": 1, "t": "listen", "data": { "state": "stopped", "reason": "permission removed" } })).await; }
                 }
                 Ok(Hub::Scopes(_)) => {}
@@ -295,12 +307,59 @@ async fn session(app: Arc<App>, ip: IpAddr, mut s: WebSocket) {
     if ctx.listener.is_some() {
         stop_listening(&app, &mut ctx).await;
     }
+    if ctx.screen.is_some() {
+        stop_screen(&app, &mut ctx).await;
+    }
     // Never leave a pointer button stuck down because a phone vanished mid-drag.
     if let Some(input) = &app.input {
         input.release_buttons(ctx.held.drain());
     }
     app.audit
         .record("disconnect", Some(&device_id), &ip.to_string());
+}
+
+/// One phone's screen view: its place in the shared capture and which monitor it looks at.
+struct ScreenSession {
+    viewer: zenvy_screen::Viewer,
+    output: String,
+    preset: zenvy_proto::ScreenPreset,
+}
+
+fn device_name(app: &App, id: &str) -> String {
+    crate::listen::clean_name(
+        &app.store
+            .lock()
+            .unwrap()
+            .get(id)
+            .map(|d| d.name.clone())
+            .unwrap_or_default(),
+    )
+}
+
+/// Leaves the screen stream (the last viewer out stops capture) and tells the person at the PC.
+async fn stop_screen(app: &App, ctx: &mut Ctx) {
+    if ctx.screen.take().is_some() {
+        app.audit.record("screen_stop", Some(&ctx.device_id), "");
+        crate::listen::notify_text(
+            app,
+            &format!(
+                "{} stopped viewing this PC's screen",
+                device_name(app, &ctx.device_id)
+            ),
+        )
+        .await;
+    }
+}
+
+fn geom(m: &zenvy_proto::Monitor) -> zenvy_screen::MonitorGeom {
+    zenvy_screen::MonitorGeom {
+        x: m.x,
+        y: m.y,
+        width: m.width,
+        height: m.height,
+        scale: m.scale,
+        transform: m.transform,
+    }
 }
 
 /// Leaves the audio stream, undoes the PC mute this phone asked for, and tells the person at the PC.
@@ -334,7 +393,7 @@ async fn handle(app: &Arc<App>, ctx: &mut Ctx, m: Msg) -> (Option<Value>, bool) 
     if app.is_locked()
         && matches!(
             m.t.as_str(),
-            "cmd" | "input" | "browser" | "favicon" | "action" | "clipboard" | "file"
+            "cmd" | "input" | "browser" | "favicon" | "action" | "clipboard" | "file" | "screen"
         )
     {
         return err("pc_locked", "The PC is locked. Unlock it first.", false);
@@ -833,6 +892,157 @@ async fn handle(app: &Arc<App>, ctx: &mut Ctx, m: Msg) -> (Option<Value>, bool) 
                     "Still locked. Check the password and try again.",
                     false,
                 )
+            }
+        }
+        "screen" => {
+            use zenvy_proto::ScreenCommand;
+            let cmd: ScreenCommand = match serde_json::from_value(m.data) {
+                Ok(c) => c,
+                Err(_) => {
+                    return err(
+                        "invalid_command",
+                        "unknown or malformed screen command",
+                        true,
+                    )
+                }
+            };
+            if let Err(e) = cmd.validate() {
+                return err("invalid_command", e, true);
+            }
+            if !ctx.scopes.contains("screen") {
+                return err("forbidden", &format!("This phone may not see the PC's screen yet. On the PC run: zenvyd grant {} screen", ctx.device_id), false);
+            }
+            let Some(streamer) = &app.cfg.screen else {
+                return err(
+                    "capability_unavailable",
+                    "the screen preview is not available on this PC (grim is missing)",
+                    false,
+                );
+            };
+            let monitors = app.adapter.monitors().await.unwrap_or_default();
+            let status = |ctx: &Ctx, state: &str| {
+                let sess = ctx.screen.as_ref();
+                let mon = sess.and_then(|s| monitors.iter().find(|m| m.connector == s.output));
+                let (lw, lh) = mon
+                    .map(|m| zenvy_screen::logical_size(&geom(m)))
+                    .unwrap_or((0.0, 0.0));
+                (
+                    Some(
+                        json!({ "v": 1, "t": "screen", "id": id, "data": { "state": state, "output": sess.map(|s| s.output.clone()), "preset": sess.map(|s| s.preset), "width": lw.round() as u32, "height": lh.round() as u32 } }),
+                    ),
+                    false,
+                )
+            };
+            match cmd {
+                ScreenCommand::Start { output, preset } => {
+                    let chosen = match &output {
+                        Some(o) => monitors.iter().find(|m| &m.connector == o),
+                        None => monitors.iter().find(|m| m.focused).or(monitors.first()),
+                    };
+                    let Some(mon) = chosen else {
+                        return err("not_found", "that monitor is not connected", false);
+                    };
+                    let preset = preset
+                        .or(ctx.screen.as_ref().map(|s| s.preset))
+                        .unwrap_or_default();
+                    let opts = zenvy_screen::CaptureOpts {
+                        output: mon.connector.clone(),
+                        logical_width: zenvy_screen::logical_size(&geom(mon)).0.round() as u32,
+                        preset,
+                    };
+                    if let Some(s) = ctx.screen.as_mut() {
+                        streamer.set_opts(opts);
+                        s.output = mon.connector.clone();
+                        s.preset = preset;
+                    } else {
+                        ctx.screen = Some(ScreenSession {
+                            viewer: streamer.view(opts),
+                            output: mon.connector.clone(),
+                            preset,
+                        });
+                        app.audit.record("screen_start", Some(&ctx.device_id), "");
+                        crate::listen::notify_text(
+                            app,
+                            &format!(
+                                "{} is viewing this PC's screen",
+                                device_name(app, &ctx.device_id)
+                            ),
+                        )
+                        .await;
+                    }
+                    status(ctx, "started")
+                }
+                ScreenCommand::Stop => {
+                    stop_screen(app, ctx).await;
+                    status(ctx, "stopped")
+                }
+                ScreenCommand::Preset { preset } => {
+                    let Some(s) = ctx.screen.as_mut() else {
+                        return err("not_found", "the screen is not being viewed", false);
+                    };
+                    let Some(mon) = monitors.iter().find(|m| m.connector == s.output) else {
+                        return err("not_found", "that monitor is not connected", false);
+                    };
+                    s.preset = preset;
+                    streamer.set_opts(zenvy_screen::CaptureOpts {
+                        output: s.output.clone(),
+                        logical_width: zenvy_screen::logical_size(&geom(mon)).0.round() as u32,
+                        preset,
+                    });
+                    status(ctx, "started")
+                }
+                ScreenCommand::Click {
+                    x,
+                    y,
+                    button,
+                    count,
+                } => {
+                    if !ctx.scopes.contains("input") {
+                        return err("forbidden", "this device lacks the 'input' scope", false);
+                    }
+                    let Some(input) = &app.input else {
+                        return err(
+                            "capability_unavailable",
+                            "input injection is not available on this PC",
+                            false,
+                        );
+                    };
+                    let Some(s) = ctx.screen.as_ref() else {
+                        return err("not_found", "the screen is not being viewed", false);
+                    };
+                    let Some(mon) = monitors.iter().find(|m| m.connector == s.output) else {
+                        return err("not_found", "that monitor is not connected", false);
+                    };
+                    let Some((px, py)) = zenvy_screen::map_point(&geom(mon), x, y) else {
+                        return err(
+                            "invalid_command",
+                            "the point must be inside the screen",
+                            true,
+                        );
+                    };
+                    if let Err(e) = app.adapter.cursor_move(px, py).await {
+                        return err("failed", &e.to_string(), false);
+                    }
+                    let b = match button {
+                        zenvy_proto::ClickKind::Left => Button::Left,
+                        zenvy_proto::ClickKind::Right => Button::Right,
+                    };
+                    for i in 0..count.unwrap_or(1) {
+                        if i > 0 {
+                            tokio::time::sleep(std::time::Duration::from_millis(60)).await;
+                        }
+                        if let Err(e) = input
+                            .execute(&InputCommand::Button {
+                                button: b,
+                                state: ButtonState::Click,
+                            })
+                            .await
+                        {
+                            return err("failed", &e.to_string(), false);
+                        }
+                    }
+                    (Some(ack()), false)
+                }
             }
         }
         "listen" => {

@@ -86,6 +86,7 @@ pub async fn snapshot(app: &App) -> Value {
             Some(f) => json!({ "enabled": true, "max_bytes": f.max_bytes, "offers": f.outgoing_list().into_iter().map(|(id, name, size)| json!({ "id": id, "name": name, "size": size })).collect::<Vec<_>>() }),
             None => json!({ "enabled": false }),
         },
+        "screen": { "enabled": app.cfg.screen.is_some() },
         "share": { "clipboard": app.cfg.clipboard.is_some(), "open_link": app.cfg.clipboard.as_ref().is_some_and(|c| c.open.is_some()) },
     })
 }
