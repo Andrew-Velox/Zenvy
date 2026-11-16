@@ -1,0 +1,257 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Zenvy demo stage</title>
+<!-- The README demo: the REAL phone UI (page.html, unchanged) next to a SIMULATED Hyprland desktop.
+     A fake agent answers the same WebSocket messages the real agent does, so every tap on the phone has the visible
+     effect on the "PC" that it has on a real one. Nothing here touches a real desktop. Driven by tools/demo.mjs. -->
+<style>
+  html,body{margin:0;background:#F5F5F7;font-family:"Inter","DejaVu Sans",system-ui,sans-serif;color:#1D1D1F}
+  #stage{position:relative;width:1280px;height:720px;overflow:hidden;background:#F5F5F7}
+  #brand{position:absolute;left:32px;top:24px;display:flex;align-items:center;gap:12px;font-size:22px;font-weight:600;letter-spacing:-.2px}
+  #brand img{width:30px;height:30px}
+  #brand span{font-weight:400;color:#6e6e73;font-size:17px}
+  #monitor{position:absolute;left:28px;top:82px;width:840px;height:473px;box-sizing:border-box;padding:7px;border-radius:16px;background:#1D1D1F;box-shadow:0 22px 44px rgba(0,0,0,.2),inset 0 0 0 1px #3a3a3c}
+  #pc{display:block;width:826px;height:459px;border-radius:9px;background:#26282d}
+  #dim{position:absolute;left:7px;top:7px;width:826px;height:459px;border-radius:9px;background:#000;opacity:0;pointer-events:none;transition:opacity .2s}
+  #neck{position:absolute;left:390px;top:555px;width:60px;height:22px;background:#c9c9ce}
+  #foot{position:absolute;left:340px;top:575px;width:160px;height:9px;border-radius:5px;background:#b9b9be}
+  #cap{position:absolute;left:28px;top:612px;width:840px}
+  #cap b{display:block;font-size:30px;line-height:38px;font-weight:600;letter-spacing:-.4px;min-height:38px}
+  #cap small{display:block;margin-top:6px;font-size:18px;line-height:26px;color:#6e6e73;min-height:26px}
+  #phone{position:absolute;left:894px;top:8px;width:360px;height:704px;box-sizing:border-box;padding:11px;border-radius:44px;background:#1D1D1F;box-shadow:0 22px 44px rgba(0,0,0,.22),inset 0 0 0 1px #3a3a3c}
+  #screen{position:relative;width:338px;height:682px;border-radius:34px;overflow:hidden;background:#000}
+  #screen iframe{position:absolute;left:0;top:0;width:412px;height:830px;border:0;transform:scale(.8204);transform-origin:0 0}
+  #tag{position:absolute;left:28px;top:696px;font-size:12px;color:#a1a1a6}
+  .link{position:absolute;left:868px;top:340px;width:26px;height:2px;background:repeating-linear-gradient(90deg,#007AFF 0 4px,transparent 4px 8px);opacity:.0;transition:opacity .15s}
+  .link.on{opacity:.9}
+</style></head>
+<body><div id="stage">
+  <div id="brand"><img src="/logo.svg" alt=""> Zenvy <span>your phone controls your Hyprland PC</span></div>
+  <div id="monitor"><canvas id="pc" width="960" height="540"></canvas><div id="dim"></div></div>
+  <div id="neck"></div><div id="foot"></div><div class="link" id="link"></div>
+  <div id="cap"><b id="cap1"></b><small id="cap2"></small></div>
+  <div id="phone"><div id="screen"><iframe id="ph" title="phone"></iframe></div></div>
+  <div id="tag">The phone UI is the real app; the desktop is a simulation answering the same messages.</div>
+</div>
+<script>
+'use strict';
+/* ===================================================== the simulated desktop ===================================================== */
+const W = 960, H = 540, BAR = 30, GAP = 10, ACCENT = '#007AFF';
+const cv = document.getElementById('pc'), g = cv.getContext('2d');
+const now = () => performance.now();
+const ease = t => 1 - Math.pow(1 - Math.min(1, Math.max(0, t)), 3);
+const pcm = { ws: 1, wins: [], act: null, cur: { x: 560, y: 300 }, vol: 60, muted: false, bright: 70, playing: true, locked: false, lockDots: 0,
+  osd: null, ripples: [], trans: null, next: 0x5a10, term: null, pending: [] };
+const TITLES = { kitty: 'kitty', 'brave-browser': 'Hyprland wiki: Dispatchers - Brave', 'org.gnome.Nautilus': 'Downloads', spotify: 'Night Drive, Moderator', code: 'main.rs - zenvy - Code',
+  vlc: 'VLC media player', obs: 'OBS Studio', 'org.telegram.desktop': 'Telegram' };
+function addWin(cls, ws, title, silent) {
+  const w = { addr: '0x' + (pcm.next++).toString(16), cls, title: title || TITLES[cls] || cls, ws, rect: null, born: silent ? -1e9 : now(), floating: false };
+  pcm.wins.push(w); if (!silent) pcm.act = w.addr; return w;
+}
+const winsOn = ws => pcm.wins.filter(w => w.ws === ws);
+function layout(n) {
+  const x = GAP, y = BAR + GAP, w = W - 2 * GAP, h = H - BAR - 2 * GAP, hw = (w - GAP) / 2, hh = (h - GAP) / 2;
+  if (n <= 1) return [{ x, y, w, h }];
+  if (n === 2) return [{ x, y, w: hw, h }, { x: x + hw + GAP, y, w: hw, h }];
+  if (n === 3) return [{ x, y, w: hw, h }, { x: x + hw + GAP, y, w: hw, h: hh }, { x: x + hw + GAP, y: y + hh + GAP, w: hw, h: hh }];
+  return [{ x, y, w: hw, h: hh }, { x: x + hw + GAP, y, w: hw, h: hh }, { x, y: y + hh + GAP, w: hw, h: hh }, { x: x + hw + GAP, y: y + hh + GAP, w: hw, h: hh }];
+}
+function relayout() { for (let ws = 1; ws <= 12; ws++) { const L = winsOn(ws), T = layout(L.length); L.forEach((w, i) => { w.target = T[Math.min(i, T.length - 1)]; if (!w.rect) w.rect = { ...w.target }; }); } }
+function stepAnim() { for (const w of pcm.wins) if (w.target) for (const k of ['x', 'y', 'w', 'h']) w.rect[k] += (w.target[k] - w.rect[k]) * 0.2; }
+function switchWs(id) {
+  if (id === pcm.ws) return; const dir = id > pcm.ws ? 1 : -1;
+  pcm.trans = { from: pcm.ws, to: id, dir, t0: now(), dur: 320 }; pcm.ws = id;
+  const L = winsOn(id); if (!L.some(w => w.addr === pcm.act)) pcm.act = L.length ? L[0].addr : null;
+}
+function rr(x, y, w, h, r) { g.beginPath(); g.moveTo(x + r, y); g.arcTo(x + w, y, x + w, y + h, r); g.arcTo(x + w, y + h, x, y + h, r); g.arcTo(x, y + h, x, y, r); g.arcTo(x, y, x + w, y, r); g.closePath(); }
+const MONO = '12px "DejaVu Sans Mono", monospace', SANS = '12px "Inter","DejaVu Sans",sans-serif';
+
+/* ---- terminal ---- */
+pcm.term = { lines: [['$ zenvyd doctor', '#9ecbff'], ['input injection   ready (uinput)', '#d8d8dc'], ['screen preview    ready (grim)', '#d8d8dc'], ['clipboard         ready (wl-copy)', '#d8d8dc'], ['phone             connected, 12 ms', '#7fd88f']], input: '', busy: false };
+function termKey(k) {
+  const t = pcm.term; if (t.busy) return;
+  if (k === 'Enter') {
+    const cmd = t.input; t.lines.push(['$ ' + cmd, '#9ecbff']); t.input = '';
+    if (/cargo test/.test(cmd)) { t.busy = true; const out = [['   Compiling zenvy-net v0.1.0', '#d8d8dc'], ['   Compiling zenvyd v0.1.0', '#d8d8dc'], ['    Finished `test` profile in 4.2s', '#d8d8dc'], ['test result: ok. 39 passed; 0 failed', '#7fd88f'], ['test result: ok. 16 passed; 0 failed', '#7fd88f']];
+      out.forEach((l, i) => pcm.pending.push({ at: now() + 260 * (i + 1), fn: () => { t.lines.push(l); if (i === out.length - 1) t.busy = false; } })); }
+  } else if (k === 'BackSpace') t.input = t.input.slice(0, -1);
+}
+function drawTerm(x, y, w, h, active) {
+  g.fillStyle = '#1d1d1f'; g.fillRect(x, y, w, h); g.font = MONO; g.textBaseline = 'top';
+  const lh = 16, rows = Math.floor((h - 14) / lh), t = pcm.term; const all = t.lines.slice(); all.push([`$ ${t.input}${active && Math.floor(now() / 500) % 2 === 0 ? '█' : ' '}`, '#e8e8ec']);
+  all.slice(-rows).forEach((l, i) => { g.fillStyle = l[1]; g.fillText(l[0].slice(0, Math.floor((w - 20) / 7.2)), x + 10, y + 8 + i * lh); });
+}
+function drawBrowser(x, y, w, h) {
+  g.fillStyle = '#fbfbfc'; g.fillRect(x, y, w, h); g.fillStyle = '#ececf0'; g.fillRect(x, y, w, 30);
+  g.fillStyle = '#fff'; rr(x + 10, y + 5, Math.min(w - 20, 260), 20, 10); g.fill(); g.font = SANS; g.textBaseline = 'middle'; g.fillStyle = '#6e6e73'; g.fillText('wiki.hypr.land/Configuring/Dispatchers', x + 22, y + 15);
+  g.fillStyle = '#1d1d1f'; g.font = '600 20px "Inter","DejaVu Sans",sans-serif'; g.textBaseline = 'top'; g.fillText('Dispatchers', x + 18, y + 46);
+  const rows = Math.max(0, Math.floor((h - 90) / 18)); for (let i = 0; i < rows; i++) { g.fillStyle = i % 5 === 4 ? '#ffffff' : '#dcdce0'; if (i % 5 !== 4) rr(x + 18, y + 84 + i * 18, Math.max(20, (w - 36) * (0.55 + 0.4 * ((i * 37) % 10) / 10)), 7, 3.5), g.fill(); }
+}
+function drawFiles(x, y, w, h) {
+  g.fillStyle = '#f4f4f6'; g.fillRect(x, y, w, h); g.fillStyle = '#e6e6ea'; g.fillRect(x, y, 110, h); g.font = SANS; g.textBaseline = 'top';
+  ['Home', 'Documents', 'Downloads', 'Pictures', 'Music'].forEach((s, i) => { g.fillStyle = i === 2 ? ACCENT : '#444'; g.fillText(s, x + 14, y + 14 + i * 22); });
+  ['Projects', 'Zenvy', 'Photos', 'Notes', 'report.pdf', 'IMG_2041.jpg'].forEach((s, i) => { const cx = x + 130 + (i % 3) * 96, cy = y + 20 + Math.floor(i / 3) * 90; g.fillStyle = i < 4 ? '#cfd3da' : '#dedee3'; rr(cx, cy, 64, 50, 8); g.fill(); g.fillStyle = '#444'; g.fillText(s, cx, cy + 58); });
+}
+function drawSpotify(x, y, w, h) {
+  g.fillStyle = '#1c1c1e'; g.fillRect(x, y, w, h); const s = Math.min(h - 120, w - 60, 150); const ax = x + (w - s) / 2, ay = y + 24;
+  g.fillStyle = '#3a3a3e'; rr(ax, ay, s, s, 10); g.fill(); g.fillStyle = '#6e6e73'; g.font = `${s * .42}px sans-serif`; g.textBaseline = 'middle'; g.textAlign = 'center'; g.fillText('♪', ax + s / 2, ay + s / 2); g.textAlign = 'left';
+  g.fillStyle = '#f5f5f7'; g.font = '600 15px "Inter","DejaVu Sans",sans-serif'; g.textBaseline = 'top'; g.fillText('Night Drive', x + 18, ay + s + 14);
+  g.fillStyle = '#aaaaaf'; g.font = SANS; g.fillText('Moderator · Bad Kingdom', x + 18, ay + s + 36);
+  g.fillStyle = '#3a3a3e'; rr(x + 18, ay + s + 62, w - 36, 4, 2); g.fill(); const p = pcm.playing ? ((now() / 1000) % 60) / 60 : 0.3; g.fillStyle = ACCENT; rr(x + 18, ay + s + 62, (w - 36) * (0.25 + p * 0.5), 4, 2); g.fill();
+  g.fillStyle = '#f5f5f7'; const cx = x + w / 2, cy = ay + s + 90;
+  if (pcm.playing) { g.fillRect(cx - 7, cy - 9, 5, 18); g.fillRect(cx + 2, cy - 9, 5, 18); } else { g.beginPath(); g.moveTo(cx - 6, cy - 10); g.lineTo(cx + 9, cy); g.lineTo(cx - 6, cy + 10); g.fill(); }
+}
+function drawCode(x, y, w, h) {
+  g.fillStyle = '#1e1f24'; g.fillRect(x, y, w, h); g.fillStyle = '#2a2b31'; g.fillRect(x, y, 34, h); g.font = MONO; g.textBaseline = 'top';
+  const rows = Math.floor((h - 12) / 16); for (let i = 0; i < rows; i++) { g.fillStyle = '#6e6e73'; g.fillText(String(i + 1).padStart(2, ' '), x + 8, y + 8 + i * 16); const L = 24 + ((i * 53) % 190), ind = (i % 4 === 1 || i % 4 === 2) ? 16 : 0; g.fillStyle = i % 5 === 0 ? ACCENT : '#8a8b92'; rr(x + 46 + ind, y + 11 + i * 16, Math.min(L, w - 60 - ind), 6, 3); g.fill(); }
+}
+function drawGeneric(x, y, w, h, w0) {
+  g.fillStyle = '#2a2b31'; g.fillRect(x, y, w, h); g.fillStyle = '#3a3a3e'; g.beginPath(); g.arc(x + w / 2, y + h / 2 - 8, 28, 0, 7); g.fill(); g.fillStyle = '#e8e8ec'; g.font = '600 24px sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText((w0.title || '?').charAt(0).toUpperCase(), x + w / 2, y + h / 2 - 8); g.textAlign = 'left';
+}
+const TB = 22;
+function drawWin(w, dx, activeWs) {
+  const r = w.rect; if (!r) return; const age = Math.min(1, (now() - w.born) / 280), e = ease(age), s = 0.94 + 0.06 * e;
+  g.save(); g.translate(dx + r.x + r.w / 2, r.y + r.h / 2); g.scale(s, s); g.translate(-(r.x + r.w / 2), -(r.y + r.h / 2)); g.globalAlpha = e;
+  const act = w.addr === pcm.act && activeWs; rr(r.x, r.y, r.w, r.h, 10); g.save(); g.clip();
+  g.fillStyle = '#2f3036'; g.fillRect(r.x, r.y, r.w, TB); g.fillStyle = '#c8c8cc'; g.font = '11px "Inter","DejaVu Sans",sans-serif'; g.textBaseline = 'middle'; g.fillText(w.title.slice(0, Math.floor(r.w / 6.4)), r.x + 12, r.y + TB / 2 + 1);
+  const x = r.x, y = r.y + TB, ww = r.w, hh = r.h - TB;
+  ({ kitty: () => drawTerm(x, y, ww, hh, act), 'brave-browser': () => drawBrowser(x, y, ww, hh), 'org.gnome.Nautilus': () => drawFiles(x, y, ww, hh), spotify: () => drawSpotify(x, y, ww, hh), code: () => drawCode(x, y, ww, hh) }[w.cls] || (() => drawGeneric(x, y, ww, hh, w)))();
+  g.restore(); rr(r.x, r.y, r.w, r.h, 10); g.lineWidth = act ? 2.5 : 1.5; g.strokeStyle = act ? ACCENT : '#55575e'; g.stroke(); g.restore();
+}
+function drawBar() {
+  g.fillStyle = 'rgba(14,14,16,.88)'; g.fillRect(0, 0, W, BAR); g.font = '600 12px "Inter","DejaVu Sans",sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
+  for (let i = 1; i <= 5; i++) { const x = 8 + (i - 1) * 28, on = pcm.ws === i, occ = winsOn(i).length > 0; g.fillStyle = on ? ACCENT : occ ? 'rgba(255,255,255,.2)' : 'rgba(255,255,255,.07)'; rr(x, 5, 24, 20, 6); g.fill(); g.fillStyle = on ? '#fff' : occ ? '#e8e8ec' : '#8a8b92'; g.fillText(String(i), x + 12, 16); }
+  const a = pcm.wins.find(w => w.addr === pcm.act && w.ws === pcm.ws); g.fillStyle = '#d8d8dc'; g.font = '12px "Inter","DejaVu Sans",sans-serif'; g.fillText(a ? a.title.slice(0, 46) : '', W / 2, 16);
+  g.textAlign = 'right'; g.fillStyle = '#e8e8ec'; g.fillText('10:24', W - 12, 16);
+  g.fillText(pcm.muted ? 'muted' : pcm.vol + '%', W - 70, 16); g.fillText(pcm.bright + '%', W - 140, 16);
+  g.strokeStyle = '#e8e8ec'; g.lineWidth = 1.4; g.beginPath(); g.moveTo(W - 108, 12); g.lineTo(W - 105, 12); g.lineTo(W - 100, 8); g.lineTo(W - 100, 22); g.lineTo(W - 105, 18); g.lineTo(W - 108, 18); g.closePath(); g.stroke();
+  g.beginPath(); g.arc(W - 178, 16, 3.4, 0, 7); g.stroke(); for (let k = 0; k < 8; k++) { const an = k * Math.PI / 4; g.moveTo(W - 178 + Math.cos(an) * 6, 16 + Math.sin(an) * 6); g.lineTo(W - 178 + Math.cos(an) * 8, 16 + Math.sin(an) * 8); } g.stroke();
+  g.textAlign = 'left';
+}
+function drawOsd() {
+  const o = pcm.osd; if (!o) return; const age = now() - o.t0; if (age > 1500) { pcm.osd = null; return; }
+  const a = age > 1200 ? 1 - (age - 1200) / 300 : 1; g.save(); g.globalAlpha = a; g.fillStyle = 'rgba(20,20,22,.92)'; rr(W / 2 - 120, H - 92, 240, 44, 22); g.fill();
+  g.fillStyle = '#e8e8ec'; g.font = '600 12px "Inter","DejaVu Sans",sans-serif'; g.textBaseline = 'middle'; g.textAlign = 'left'; g.fillText(o.label, W / 2 - 100, H - 70);
+  g.fillStyle = 'rgba(255,255,255,.2)'; rr(W / 2 - 40, H - 74, 130, 8, 4); g.fill(); g.fillStyle = ACCENT; rr(W / 2 - 40, H - 74, 130 * o.v / 100, 8, 4); g.fill(); g.restore();
+}
+function drawLock() {
+  if (!pcm.locked) return; g.fillStyle = 'rgba(22,22,25,.96)'; g.fillRect(0, 0, W, H); g.textAlign = 'center'; g.textBaseline = 'middle';
+  g.fillStyle = '#f5f5f7'; g.font = '300 84px "Inter","DejaVu Sans",sans-serif'; g.fillText('10:24', W / 2, 150); g.font = '16px "Inter","DejaVu Sans",sans-serif'; g.fillStyle = '#aaaaaf'; g.fillText('Locked', W / 2, 214);
+  g.strokeStyle = '#6e6e73'; g.lineWidth = 2; rr(W / 2 - 150, 262, 300, 46, 23); g.stroke();
+  for (let i = 0; i < pcm.lockDots; i++) { g.fillStyle = '#f5f5f7'; g.beginPath(); g.arc(W / 2 - 100 + i * 20, 285, 4.5, 0, 7); g.fill(); }
+  g.textAlign = 'left';
+}
+function drawCursor() {
+  for (const r of pcm.ripples) { const k = (now() - r.t) / 380; if (k < 1) { g.strokeStyle = `rgba(0,122,255,${1 - k})`; g.lineWidth = 3; g.beginPath(); g.arc(r.x, r.y, 6 + 24 * ease(k), 0, 7); g.stroke(); } }
+  pcm.ripples = pcm.ripples.filter(r => now() - r.t < 380); if (pcm.locked) return;
+  g.save(); g.translate(pcm.cur.x, pcm.cur.y); g.beginPath(); [[0, 0], [0, 17], [4.5, 13], [7.5, 20], [10, 19], [7, 12.5], [13, 12.5]].forEach((p, i) => i ? g.lineTo(p[0], p[1]) : g.moveTo(p[0], p[1])); g.closePath(); g.fillStyle = '#fff'; g.fill(); g.lineWidth = 1.3; g.strokeStyle = '#000'; g.stroke(); g.restore();
+}
+function frame() {
+  const t = now(); pcm.pending = pcm.pending.filter(p => { if (t >= p.at) { p.fn(); return false; } return true; });
+  relayout(); stepAnim(); g.clearRect(0, 0, W, H); g.fillStyle = '#26282d'; g.fillRect(0, 0, W, H);
+  if (pcm.trans) { const k = ease((t - pcm.trans.t0) / pcm.trans.dur); const tr = pcm.trans; winsOn(tr.from).forEach(w => drawWin(w, -tr.dir * W * k, false)); winsOn(tr.to).forEach(w => drawWin(w, tr.dir * W * (1 - k), true)); if (t - tr.t0 >= tr.dur) pcm.trans = null; }
+  else winsOn(pcm.ws).forEach(w => drawWin(w, 0, true));
+  drawBar(); drawOsd(); drawLock(); drawCursor(); document.getElementById('dim').style.opacity = String(Math.max(0, (100 - pcm.bright) / 100 * 0.75));
+  requestAnimationFrame(frame);
+}
+function click(x, y) { pcm.ripples.push({ x, y, t: now() }); const w = [...winsOn(pcm.ws)].reverse().find(w => w.rect && x >= w.rect.x && x <= w.rect.x + w.rect.w && y >= w.rect.y && y <= w.rect.y + w.rect.h); if (w && pcm.act !== w.addr) { pcm.act = w.addr; agent.pushDesktop(); } }
+function hover() { if (pcm.locked || pcm.trans) return; const x = pcm.cur.x, y = pcm.cur.y; const w = [...winsOn(pcm.ws)].reverse().find(w => w.rect && x >= w.rect.x && x <= w.rect.x + w.rect.w && y >= w.rect.y && y <= w.rect.y + w.rect.h); if (w && pcm.act !== w.addr) { pcm.act = w.addr; agent.pushDesktop(); } }
+
+/* ===================================================== the fake agent (answers the real WebSocket protocol) ===================================================== */
+const b64u = b => btoa(String.fromCharCode(...b)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+const APPS = [['brave-browser', 'Brave'], ['org.gnome.Nautilus', 'Files'], ['kitty', 'kitty'], ['spotify', 'Spotify'], ['org.telegram.desktop', 'Telegram'], ['code', 'Visual Studio Code'], ['vlc', 'VLC media player'], ['obs', 'OBS Studio']];
+const agent = {
+  socks: new Set(), seq: 1, screenTimer: 0, shotSeq: 0,
+  attach(sock) { this.socks.add(sock); setTimeout(() => { sock.readyState = 1; if (sock.onopen) sock.onopen({}); this.out(sock, { v: 1, t: 'challenge', data: { nonce: b64u(crypto.getRandomValues(new Uint8Array(16))) } }); }, 30); },
+  out(sock, obj) { setTimeout(() => sock.onmessage && sock.onmessage({ data: typeof obj === 'string' ? obj : JSON.stringify(obj) }), 6); },
+  evt(topic, value) { for (const s of this.socks) this.out(s, { v: 1, t: 'evt', seq: this.seq++, data: { topic, value } }); },
+  reply(sock, id, t, data) { if (id) this.out(sock, { v: 1, t, id, data: data || { ok: true } }); },
+  desktop() {
+    const nums = [...new Set([1, 2, 3, pcm.ws, ...pcm.wins.map(w => w.ws)])].sort((a, b) => a - b);
+    return { monitors: [{ connector: 'HDMI-A-1', make: '', model: '', width: 1920, height: 1080, refresh_hz: 60, scale: 1, transform: 0, x: 0, y: 0, focused: true, active_workspace: pcm.ws, special_workspace: null }],
+      workspaces: nums.map(id => ({ id, name: String(id), monitor: 'HDMI-A-1', windows: winsOn(id).length })),
+      windows: pcm.wins.map(w => ({ address: w.addr, class: w.cls, title: w.title, workspace: w.ws, floating: false, monitor: 0, mapped: true })), active_window: pcm.act };
+  },
+  pushDesktop() { if (pcm.locked) return; this.evt('desktop.state', this.desktop()); },
+  audio() { return { output: { name: 'alsa_output.pci', description: 'Built-in Audio Analog Stereo', volume: pcm.vol, muted: pcm.muted }, mic: { name: 'alsa_input.pci', description: 'Built-in Audio Mono', volume: 70, muted: false },
+    outputs: [{ name: 'alsa_output.pci', description: 'Built-in Audio Analog Stereo', default: true }, { name: 'alsa_output.hdmi', description: 'HDMI Digital Stereo', default: false }] }; },
+  media() { return { current: 'org.mpris.MediaPlayer2.spotify', players: [{ id: 'org.mpris.MediaPlayer2.spotify', identity: 'Spotify', status: pcm.playing ? 'playing' : 'paused', title: 'Night Drive', artist: 'Moderator', album: 'Bad Kingdom', length_ms: 215000, position_ms: 83000, can_next: true, can_prev: true, can_seek: true }] }; },
+  bright() { return { displays: [{ id: 'ddc:1', name: 'HDMI-A-1', model: 'Monitor', kind: 'ddc', percent: pcm.bright }] }; },
+  power() { return { lock: pcm.locked ? 'locked' : 'unlocked', can_lock: true, can_suspend: true, can_reboot: true, can_poweroff: true, can_unlock: true }; },
+  snapshot() {
+    return { capabilities: { capabilities: { 'input.pointer': { state: 'available', backend: 'uinput' }, 'input.text': { state: 'available', backend: 'wtype' }, 'clipboard.sync': { state: 'available', backend: 'wl-clipboard' }, 'screen.capture': { state: 'available', backend: 'grim' }, 'audio.listen': { state: 'available', backend: 'parec' }, 'battery.monitor': { state: 'unsupported' } } },
+      ui_manifest: ['dashboard', 'touchpad', 'keyboard', 'workspaces', 'windows', 'settings', 'media', 'audio', 'brightness', 'power'].map(id => ({ id, enabled: true })),
+      desktop: this.desktop(), browser: { browsers: [] }, audio: this.audio(), media: this.media(), brightness: this.bright(), power: this.power(),
+      actions: [{ id: 'lights', label: 'Lights off', icon: 'sun', confirm: false }, { id: 'backup', label: 'Back up now', icon: 'copy', confirm: true }],
+      share: { clipboard: true, open_link: true }, files: { enabled: true, max_bytes: 2147483648, offers: [] }, screen: { enabled: true }, apps: { enabled: true } };
+  },
+  recv(sock, text) {
+    const m = JSON.parse(text), id = m.id, d = m.data || {};
+    switch (m.t) {
+      case 'ping': setTimeout(() => this.out(sock, { v: 1, t: 'pong', id }), 9); break;
+      case 'auth': this.out(sock, { v: 1, t: 'ready', data: { device_id: 'demo', proto: 1, session_ttl_s: 86400 } }); setTimeout(() => this.out(sock, { v: 1, t: 'snapshot', data: this.snapshot() }), 20); break;
+      case 'icon': this.out(sock, { v: 1, t: 'icon', id, data: { class: d.class, none: true } }); break;
+      case 'cmd': this.cmd(sock, id, d); break;
+      case 'apps': this.apps(sock, id, d); break;
+      case 'input': this.input(d); break;
+      case 'audio': if (d.cmd === 'set_volume') { pcm.vol = d.percent; pcm.muted = false; pcm.osd = { label: 'Volume', v: pcm.vol, t0: now() }; } else if (d.cmd === 'set_mute') pcm.muted = !!d.muted; this.evt('audio.state', this.audio()); this.reply(sock, id, 'ack'); break;
+      case 'media': if (['play_pause', 'play', 'pause'].includes(d.cmd)) { pcm.playing = d.cmd === 'play' ? true : d.cmd === 'pause' ? false : !pcm.playing; this.evt('media.state', this.media()); } this.reply(sock, id, 'ack'); break;
+      case 'brightness': if (d.cmd === 'set') { pcm.bright = d.percent; pcm.osd = { label: 'Brightness', v: pcm.bright, t0: now() }; } this.evt('brightness.state', this.bright()); this.reply(sock, id, 'ack'); break;
+      case 'screen': this.screen(sock, id, d); break;
+      case 'power': if (d.cmd === 'request' && d.action === 'lock') { this.reply(sock, id, 'ack'); pcm.locked = true; pcm.lockDots = 0; this.evt('power.state', this.power()); this.evt('desktop.state', { monitors: [], workspaces: [], windows: [], active_window: null }); } else this.reply(sock, id, 'ack'); break;
+      case 'unlock': { const n = (d.password || '').length || 8; this.reply(sock, id, 'ack'); let i = 0; const tick = () => { pcm.lockDots = ++i; if (i < n) setTimeout(tick, 70); else setTimeout(() => { pcm.locked = false; pcm.lockDots = 0; this.evt('power.state', this.power()); this.pushDesktop(); }, 350); }; tick(); break; }
+      default: this.reply(sock, id, 'ack');
+    }
+  },
+  cmd(sock, id, d) {
+    if (d.cmd === 'switch_workspace') switchWs(d.id);
+    else if (d.cmd === 'move_window_to_workspace') { const w = pcm.wins.find(x => x.addr === d.address); if (w) { w.ws = d.workspace; if (pcm.act === w.addr && w.ws !== pcm.ws) { const L = winsOn(pcm.ws); pcm.act = L.length ? L[0].addr : null; } } }
+    else if (d.cmd === 'focus_window') { const w = pcm.wins.find(x => x.addr === d.address); if (w) { switchWs(w.ws); pcm.act = w.addr; } }
+    else if (d.cmd === 'close_window') pcm.wins = pcm.wins.filter(x => x.addr !== d.address);
+    this.pushDesktop(); this.reply(sock, id, 'ack');
+  },
+  apps(sock, id, d) {
+    if (d.cmd === 'list') { this.out(sock, { v: 1, t: 'apps', id, data: { apps: APPS.map(([i, n]) => ({ id: i, name: n })) } }); return; }
+    const app = APPS.find(a => a[0] === d.id); if (!app) { this.out(sock, { v: 1, t: 'err', id, data: { code: 'unknown_app', message: 'that app is not installed' } }); return; }
+    let ws = pcm.ws; if (d.workspace === 'empty') { ws = 1; while (winsOn(ws).length) ws++; } else if (typeof d.workspace === 'number') ws = d.workspace;
+    switchWs(ws); setTimeout(() => { addWin(d.id, ws); this.pushDesktop(); }, 520);
+    this.out(sock, { v: 1, t: 'apps', id, data: { state: 'launched', name: app[1], workspace: d.workspace === 'here' ? null : ws } }); setTimeout(() => this.pushDesktop(), 60);
+  },
+  input(d) {
+    if (pcm.locked) return;
+    if (d.cmd === 'pointer_move') { pcm.cur.x = Math.min(W - 2, Math.max(2, pcm.cur.x + d.dx * 1.5)); pcm.cur.y = Math.min(H - 2, Math.max(BAR, pcm.cur.y + d.dy * 1.5)); hover(); }
+    else if (d.cmd === 'button' && (d.state === 'click' || d.state === 'down')) click(pcm.cur.x, pcm.cur.y);
+    else if (d.cmd === 'text') { const w = pcm.wins.find(x => x.addr === pcm.act); if (w && w.cls === 'kitty' && !pcm.term.busy) pcm.term.input += d.text; }
+    else if (d.cmd === 'key') { const w = pcm.wins.find(x => x.addr === pcm.act); if (w && w.cls === 'kitty') termKey(d.key === 'enter' ? 'Enter' : d.key === 'backspace' ? 'BackSpace' : ''); }
+  },
+  screen(sock, id, d) {
+    if (d.cmd === 'start') { this.out(sock, { v: 1, t: 'screen', id, data: { state: 'started', output: 'HDMI-A-1', preset: d.preset || 'medium', width: 960, height: 540 } }); clearInterval(this.screenTimer);
+      this.screenTimer = setInterval(() => cv.toBlob(async b => { if (!b) return; const jpg = new Uint8Array(await b.arrayBuffer()); const buf = new Uint8Array(9 + jpg.length); const dv = new DataView(buf.buffer); buf[0] = 2; dv.setUint32(1, ++this.shotSeq, true); dv.setUint16(5, 960, true); dv.setUint16(7, 540, true); buf.set(jpg, 9); if (sock.onmessage) sock.onmessage({ data: buf.buffer }); }, 'image/jpeg', 0.62), 130); }
+    else if (d.cmd === 'stop') { clearInterval(this.screenTimer); this.reply(sock, id, 'ack'); }
+    else if (d.cmd === 'click') { pcm.cur.x = d.x * W; pcm.cur.y = Math.max(BAR, d.y * H); click(pcm.cur.x, pcm.cur.y); this.reply(sock, id, 'ack'); }
+    else this.reply(sock, id, 'ack');
+  },
+};
+
+/* ===================================================== the phone: the real page, with a fake WebSocket ===================================================== */
+window.__zv = { attach: s => agent.attach(s), recv: (s, t) => agent.recv(s, t) };
+const SHIM = `<script>window.WebSocket=class{constructor(u){this.url=u;this.readyState=0;this.binaryType='arraybuffer';this.onopen=this.onmessage=this.onclose=this.onerror=null;parent.__zv.attach(this)}send(t){parent.__zv.recv(this,t)}close(){this.readyState=3}};<\/script>`;
+async function seedDevice() { // the page only connects when a paired device exists: a throwaway key, never leaves this page
+  const kp = await crypto.subtle.generateKey({ name: 'Ed25519' }, false, ['sign', 'verify']);
+  await new Promise((ok, no) => { const r = indexedDB.open('zenvy', 1); r.onupgradeneeded = () => r.result.createObjectStore('kv'); r.onerror = () => no(r.error);
+    r.onsuccess = () => { const t = r.result.transaction('kv', 'readwrite'); t.objectStore('kv').put({ id: 'demo', key: kp.privateKey }, 'device'); t.oncomplete = ok; t.onerror = () => no(t.error); }; });
+}
+window.stage = {
+  async start() {
+    relayout(); requestAnimationFrame(frame);
+    addWin('kitty', 1, 'zenvy', true); addWin('brave-browser', 1, null, true); addWin('code', 2, null, true); addWin('org.gnome.Nautilus', 3, null, true); pcm.act = pcm.wins[0].addr; relayout();
+    localStorage.setItem('zenvy.prefs', JSON.stringify({ theme: 'light', lastTab: 'desk', backdrop: true, haptics: false, sq: 'medium', follow: false }));
+    await seedDevice();
+    const html = (await (await fetch('/index.html')).text()).replace('<head>', '<head>' + SHIM);
+    const f = document.getElementById('ph'); const loaded = new Promise(r => f.addEventListener('load', r, { once: true })); f.srcdoc = html; await loaded;
+    return true;
+  },
+  phone: () => document.getElementById('ph').contentWindow,
+  caption(a, b) { document.getElementById('cap1').textContent = a || ''; document.getElementById('cap2').textContent = b || ''; },
+  pc: pcm, agent,
+};
+</script></body></html>

@@ -1,8 +1,9 @@
-// Captures the README screenshots and the demo animation frames from the phone UI's built-in demo mode
+// Captures the README screenshots (tabs, launcher, window move, floating screen, lock, settings) from the phone UI's built-in demo mode
 // (sample data, no connection to any PC). Needs Brave or Chrome and Node 22.
 //
 //   python3 -m http.server 8765 --directory <dir containing index.html = crates/zenvy-net/src/page.html>
-//   BROWSER=brave OUT=docs/media/raw node tools/screenshots.mjs
+//   BROWSER=brave OUT=docs/media/raw node tools/screenshots.mjs stills
+// The side-by-side demo animation is made by tools/demo.mjs.
 //
 // It starts its own headless browser with a temporary profile and stops only that process.
 import { spawn } from 'node:child_process';
@@ -81,52 +82,6 @@ if (which === 'all' || which === 'stills') {
     await goto(`demo=desk&theme=${theme}`, SETUP_APPS); await run(`openMove(state.windows[1].address)`); await sleep(400); await shot(`move-${theme}`);
     await goto(`demo=pad&theme=${theme}`, SHOW_SCREEN); await run(`setTab('screen');${SHOW_SCREEN};setTab('pad')`); await run(FLOAT_ON); await run(`prefs.mini={w:240,x:innerWidth-254,y:330};miniPlace()`); await sleep(500); await shot(`floating-${theme}`);
   }
-}
-
-if (which === 'all' || which === 'video') {
-  scale = 1; await metrics();
-  const dir = join(OUT, 'frames'); const durs = []; let fi = 0, last = Date.now();
-  const frame = async () => { const r = await cdp('Page.captureScreenshot', { format: 'jpeg', quality: 88 }); const now = Date.now(); const name = `f${String(fi++).padStart(4, '0')}.jpg`; writeFileSync(join(dir, name), Buffer.from(r.data, 'base64')); durs.push([name, Math.max(0.04, (now - last) / 1000)]); last = now; };
-  const hold = async ms => { const end = Date.now() + ms; while (Date.now() < end) await frame(); };
-  const tapEl = async sel => { await run(`(() => { const e = document.querySelector(${JSON.stringify(sel)}); if (!e) throw new Error('no ${sel}'); const r = e.getBoundingClientRect(); const d = document.createElement('i'); d.className = 'zv-tap'; d.style.left = (r.x + r.width / 2) + 'px'; d.style.top = (r.y + r.height / 2) + 'px'; document.body.appendChild(d); setTimeout(() => d.remove(), 600); })()`); await hold(260); await run(`document.querySelector(${JSON.stringify(sel)}).click()`); };
-  const tapAt = async (x, y) => { await run(`(() => { const d = document.createElement('i'); d.className = 'zv-tap'; d.style.left = '${x}px'; d.style.top = '${y}px'; document.body.appendChild(d); setTimeout(() => d.remove(), 600); })()`); await hold(240); };
-  const pe = (el, type, x, y) => run(`document.querySelector(${JSON.stringify(el)}).dispatchEvent(new PointerEvent('${type}',{bubbles:true,cancelable:true,pointerId:7,clientX:${x},clientY:${y},isPrimary:true,button:0}))`);
-  const type = async (sel, text) => { for (let i = 1; i <= text.length; i++) { await run(`(() => { const q = document.querySelector(${JSON.stringify(sel)}); q.value = ${JSON.stringify(text)}.slice(0, ${i}); q.dispatchEvent(new Event('input')); })()`); await hold(140); } };
-
-  await goto('demo=desk&theme=light', SETUP_APPS + SHOW_SCREEN + `;1`);
-  await run(`window.__mock=${MOCK};`);
-  await hold(1300);
-  // 1. launcher: open an app on a new empty workspace
-  await tapEl('#ws-add'); await hold(900);
-  await type('#ap-q', 'spo'); await hold(500);
-  await tapEl('[data-app=spotify]'); await hold(1100);
-  // 2. move a window to another workspace
-  await tapEl('[data-move]'); await hold(900);
-  await tapEl('[data-mvto="1"]'); await hold(1200);
-  // 3. touchpad with a finger trail
-  await tapEl('#nav [data-tab=pad]'); await hold(700);
-  const pad = await run(`(() => { const r = document.getElementById('padwrap').getBoundingClientRect(); return [r.x, r.y, r.width, r.height]; })()`);
-  const [px, py, pw, ph] = pad;
-  for (let t = 0; t <= 14; t++) { const x = px + pw * (0.25 + 0.5 * t / 14), y = py + ph * (0.55 - 0.25 * Math.sin(Math.PI * t / 14)); await pe('#padwrap', t === 0 ? 'pointerdown' : 'pointermove', x, y); await hold(55); }
-  await pe('#padwrap', 'pointerup', px + pw * 0.75, py + ph * 0.55); await hold(500);
-  // 4. keyboard and media
-  await tapEl('#nav [data-tab=keys]'); await hold(1200);
-  await tapEl('#nav [data-tab=media]'); await hold(1400);
-  // 5. screen preview, brightness, tap to click
-  await tapEl('#nav [data-tab=screen]'); await run(SHOW_SCREEN + `;scrOn=true;renderScreen();$('sc-cv').hidden=false;$('sc-empty').hidden=true;$('sc-stat').hidden=false;$('sc-stat').textContent='8 fps'`); await hold(1500);
-  const cv = await run(`(() => { const r = $('sc-cv').getBoundingClientRect(); return [r.x, r.y, r.width, r.height]; })()`);
-  await tapAt(cv[0] + cv[2] * 0.55, cv[1] + cv[3] * 0.4); await hold(700);
-  // 6. the floating screen window follows you to other tabs, and can be dragged
-  await tapEl('#nav [data-tab=pad]'); await run(FLOAT_ON); await hold(1200);
-  const g = await run(`(() => { const r = $('sc-grip').getBoundingClientRect(); return [r.x + 10, r.y + 14]; })()`);
-  for (let t = 1; t <= 10; t++) { await pe('#sc-grip', t === 1 ? 'pointerdown' : 'pointermove', g[0] - t * 6, g[1] - t * 38); await hold(60); }
-  await pe('#sc-mh', 'pointerup', g[0] - 60, g[1] - 380); await hold(1000);
-  // 7. dark theme
-  await run(`themeForce='dark';applyTheme()`); await hold(1300);
-  await run(`scrOn=false;updateMini()`);
-  await tapEl('#nav [data-tab=desk]'); await hold(1400);
-  writeFileSync(join(OUT, 'frames.txt'), durs.map(([f, d]) => `file '${join('frames', f).replace(/^.*?frames/, 'frames')}'\nduration ${d.toFixed(3)}`).join('\n') + `\nfile 'frames/${durs.at(-1)[0]}'\n`);
-  console.log('video frames', durs.length, 'seconds', durs.reduce((a, b) => a + b[1], 0).toFixed(1));
 }
 
 cleanup(); await sleep(300); process.exit(0);
