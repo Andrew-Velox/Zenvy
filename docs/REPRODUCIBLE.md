@@ -9,6 +9,6 @@ cargo build --release --locked -p zenvyd
 sha256sum target/release/zenvyd
 ```
 
-To verify a release, check out its tag, build as above with the same Rust toolchain version as the release workflow (stable at the time of the release; the version is printed in the workflow log), and compare the hash with the binary inside the release tarball. `Cargo.lock` is committed and `--locked` makes the dependency versions exact.
+To verify a release, check out its tag, build as above with the same Rust toolchain version as the release workflow (pinned in `.github/workflows/release.yml`, currently 1.98.1), and compare the hash with the binary inside the release tarball. `Cargo.lock` is committed and `--locked` makes the dependency versions exact.
 
 Limits: the same toolchain and system C compiler are needed (the crypto library `aws-lc` is compiled from C), and the Android APK is not reproducible because it is signed.

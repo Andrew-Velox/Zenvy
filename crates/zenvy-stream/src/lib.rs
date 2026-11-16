@@ -173,8 +173,8 @@ async fn capture_loop(inner: Arc<Inner>) {
                 let mut packet = [0u8; 1500];
                 while out.read_exact(&mut pcm).await.is_ok() {
                     backoff = Duration::from_millis(300);
-                    for (s, b) in samples.iter_mut().zip(pcm.chunks_exact(2)) {
-                        *s = i16::from_le_bytes([b[0], b[1]]);
+                    for (s, b) in samples.iter_mut().zip(pcm.as_chunks::<2>().0) {
+                        *s = i16::from_le_bytes(*b);
                     }
                     if let Ok(n) = enc.encode(&samples, &mut packet) {
                         let seq = inner.seq.fetch_add(1, Ordering::Relaxed);

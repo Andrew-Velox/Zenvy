@@ -2,7 +2,7 @@
 
 A thin native shell around the Zenvy web UI: certificate-pinned to the PC you paired with, locked to that one origin, installable like any app.
 
-Build and install (JDK 17 + Android SDK, both already set up on the reference machine):
+Build and install (JDK 17 + Android SDK; set `JAVA_HOME` to the JDK 17, for example `/usr/lib/jvm/java-17-openjdk` on Arch):
 
 ```bash
 cd android
