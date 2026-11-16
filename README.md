@@ -2,106 +2,184 @@
 
 # Zenvy
 
-Control your Hyprland PC from your phone: touchpad, keyboard, windows and workspaces, media and volume, brightness, a live screen preview you can click through, files, clipboard, the PC's sound on your phone, power and unlock. Nothing leaves your network: no account, no cloud, no telemetry.
+Control your Hyprland PC from your phone. Touchpad, keyboard, windows and workspaces, media, volume, brightness, a live screen you can tap through, files, clipboard, power and unlock. No cloud, no account, no telemetry: the phone talks straight to the PC over your own network.
 
-**Status:** feature-complete for daily use on Hyprland and heading for its first public release (0.1.0). It is tested on one reference machine (Arch Linux, Hyprland); other distributions are untested for now. [PLAN.md](PLAN.md) is the full design and records what was verified and what is still assumed. Security model and reporting: [SECURITY.md](SECURITY.md).
+<p align="center"><img src="docs/media/demo.webp" width="320" alt="Zenvy demo: opening an app on a new workspace, moving a window, touchpad, keyboard, media, the screen preview and its floating window, dark theme"></p>
 
-For development (see [CONTRIBUTING.md](CONTRIBUTING.md)):
+![The five main screens: Desk, Touchpad, Keyboard, Media and Screen](docs/media/tabs.webp)
+
+## Features
+
+- **Desk**: workspaces, windows (focus, close, move to another workspace), browser tabs (extension), and your own one-tap actions.
+- **Open apps anywhere**: the `+` next to the workspaces lists your installed apps; one tap switches to the first empty workspace and starts the app there.
+- **Touchpad and keyboard**: pointer, scroll, clicks, drag; live typing with any layout and Unicode, shortcuts and special keys.
+- **Screen**: a live preview of any monitor you can tap, long-press and double-tap to click. It floats as a draggable, resizable window over every other tab. Monitor brightness lives here too.
+- **Media**: player controls, volume, and the **phone speaker**: the PC's sound played on your phone.
+- **Files and clipboard**: send files both ways, copy text to the PC clipboard, share a link from any phone app to open it on the PC.
+- **Power and lock**: lock, sleep, restart, power off (with confirmation and a countdown). When the PC is locked, the phone mirrors the lock screen and can type the password.
+- **Private by design**: each feature beyond the basics is a permission you grant per phone, and a locked PC refuses everything but media, volume, brightness, power and unlock.
+
+![More: the app launcher, moving a window, the floating screen window, the lock page and settings](docs/media/more.webp)
+
+## Install
+
+Zenvy has two parts: the **agent** (`zenvyd`) on the PC and the **Android app**. You need Hyprland on Wayland and a phone on the same network.
+
+### 1. The agent
+
+**From a release:**
 
 ```bash
-cargo build
-target/debug/zenvyd doctor        # probe capabilities
-target/debug/zenvyd state         # monitors / workspaces / windows
-target/debug/zenvyd watch         # live (coalesced) Hyprland events
-target/debug/zenvyd serve         # HTTPS+WebSocket server (binds the default-route LAN address)
-target/debug/zenvyd pair          # QR code + approve the phone on this PC
-target/debug/zenvyd devices | revoke <id>
-cargo test
+tar xzf zenvy-0.1.0-x86_64-linux.tar.gz && cd zenvy-0.1.0-x86_64-linux
+packaging/install.sh --enable       # installs ~/.local/bin/zenvyd and a systemd user service, starts it
 ```
 
-**Android app:** see [android/README.md](android/README.md) (installed with `adb install`).
-
-`spikes/` holds throwaway Phase 0 experiments (separate workspace); they are not part of the product.
-
-## Install and run
-
-You need Hyprland on Wayland, a phone on the same network, and (optional, each enables a feature) `grim`, `wl-clipboard`, `pipewire-pulse`/`libpulse`, `libnotify`, `ddcutil` and `wtype`; `zenvyd doctor` shows what is missing.
-
-**Arch Linux:** `makepkg -si` in `packaging/arch/` (it builds from the release tarball; an AUR package will follow), then `systemctl --user enable --now zenvyd`.
-
-**Any distribution, as your user (nothing outside your home directory):**
+**From source** (needs Rust, `libopus` and a C compiler):
 
 ```bash
 git clone https://github.com/Andrew-Velox/Zenvy && cd Zenvy
-packaging/install.sh --enable      # builds with cargo (or uses the prebuilt zenvyd from a release tarball),
-                                   # installs ~/.local/bin/zenvyd and a systemd user service, starts it
-zenvyd pair                        # QR code; scan it with the Android app, then approve on this PC
+packaging/install.sh --enable       # builds with cargo, then installs the same way
 ```
 
-The service starts at login (`journalctl --user -u zenvyd` for logs) and only authenticated, approved phones can use it. `packaging/uninstall.sh` removes it again (`--purge` also deletes paired phones and settings; your received files are never touched). Stopping or restarting the service does not close apps you started from the phone.
+**Arch Linux:** `makepkg -si` in `packaging/arch/`, then `systemctl --user enable --now zenvyd`.
 
-The prebuilt `zenvyd` in a release is built on Ubuntu 24.04 (glibc 2.39 or newer, plus `libopus`); on an older system `packaging/install.sh` builds from source instead.
+The prebuilt binary is built on Ubuntu 24.04 and needs glibc 2.39 or newer; on an older system build from source. The script installs for your user only and touches nothing outside your home directory. Logs: `journalctl --user -u zenvyd`.
 
-The Android app is in the release as an APK (`adb install`, or open the file on the phone); to build it yourself see [android/README.md](android/README.md). Releases are checksummed, built reproducibly and carry signed provenance ([docs/RELEASING.md](docs/RELEASING.md), [docs/REPRODUCIBLE.md](docs/REPRODUCIBLE.md)).
+### 2. Firewall
+
+The agent listens on one LAN address, port 7878 (TCP). If you run a firewall, allow your local network to reach it:
+
+```bash
+sudo ufw allow from 192.168.1.0/24 to any port 7878 proto tcp          # ufw
+sudo firewall-cmd --permanent --add-rich-rule='rule family="ipv4" source address="192.168.1.0/24" port port="7878" protocol="tcp" accept' && sudo firewall-cmd --reload   # firewalld
+```
+
+(Use your own network range.) Do not forward this port to the internet.
+
+### 3. Pair your phone
+
+1. Install the Android app (the APK from the release, or build it: [android/README.md](android/README.md)).
+2. On the PC run `zenvyd pair`. It shows a QR code.
+3. In the app tap **Scan QR code**. The phone shows a 4-digit code; the PC asks you to approve the phone only if the same code is shown there.
+
+The phone now holds its own key and trusts exactly this PC's certificate. List or remove phones any time with `zenvyd devices` and `zenvyd revoke <id>`.
+
+### 4. Allow the extras
+
+A new phone gets only the basics: view, touchpad and keyboard, windows, volume and brightness. Everything else you switch on yourself, per phone:
+
+```bash
+zenvyd grant <id> screen            # screen preview (and clicking through it)
+zenvyd grant <id> launch            # open apps from the phone
+zenvyd grant <id> listen            # phone speaker
+zenvyd grant <id> clipboard         # clipboard and links      (also: files = file transfer)
+zenvyd grant <id> power             # power menu               (also: unlock = type the password on the lock screen)
+zenvyd grant <id> exec              # your own actions from config.toml
+zenvyd ungrant <id> screen          # take one away
+```
+
+If a phone tries something it may not do yet, the app shows the exact command to run.
+
+## Requirements
+
+Everything optional simply turns its feature off when a tool is missing. `zenvyd doctor` shows what works on your machine.
+
+| Feature | Needs |
+| --- | --- |
+| Touchpad, clicks, typing | write access to `/dev/uinput` (see below); `wtype` for text |
+| Windows, workspaces, apps | Hyprland |
+| Screen preview | `grim` |
+| Clipboard, links | `wl-clipboard` (`wl-copy`, `wl-paste`) |
+| Volume, phone speaker | PipeWire or PulseAudio with `pactl` and `parec` (`libpulse`) |
+| Media controls | any MPRIS player and a D-Bus session bus |
+| Brightness | `ddcutil` with DDC/CI enabled on the monitor, or a laptop backlight |
+| Desktop notices | `notify-send` (`libnotify`) |
+| Power and lock | `systemd` (`systemctl`, `loginctl`) |
+
+### Letting the agent type and click
+
+Pointer and key input go through a virtual device, which needs write access to `/dev/uinput`. This is a change to your system, so Zenvy never does it for you. If `zenvyd doctor` says input injection is unavailable:
+
+```bash
+sudo modprobe uinput
+echo 'KERNEL=="uinput", GROUP="input", MODE="0660", OPTIONS+="static_node=uinput"' | sudo tee /etc/udev/rules.d/60-zenvy-uinput.rules
+sudo usermod -aG input "$USER"        # then log out and back in
+```
+
+Anything running as a member of the `input` group can then inject input, which is true on every system that allows this. Zenvy only uses it for phones you paired.
+
+## Configuration
+
+Optional. `~/.config/zenvy/config.toml`, every key has a default; `zenvyd config` checks the file.
+
+```toml
+[server]
+bind = ["192.168.1.20"]            # default: the address of your default route
+port = 7878
+
+[files]
+inbox = "~/Downloads/Zenvy"        # where files from the phone land (never overwritten)
+max_size_mb = 2048
+
+[[actions]]                        # buttons on the Desk screen, need the `exec` permission
+id = "hello"
+label = "Say hello"
+icon = "zap"
+argv = ["notify-send", "Hello from the phone"]   # a fixed argument list, never a shell line
+confirm = false                    # true = ask on the phone first
+```
 
 ## Browser tabs (optional)
 
-Run `zenvyd browser setup` and follow the steps to load `browser-extension/` in Brave or Chrome. The phone's Desk screen then shows a **tabs** chip on browser windows, where you can switch, close or open tabs. Only tab titles and site names are shared, with this PC only (loopback, token protected). Details: [browser-extension/README.md](browser-extension/README.md) and PLAN.md Appendix H.
+Run `zenvyd browser setup` and follow the steps to load [`browser-extension/`](browser-extension/README.md) in Brave or Chrome. The Desk screen then shows a **tabs** chip on browser windows to switch, close or open tabs. Only tab titles and site names are shared, with this PC only (loopback, token protected).
 
-## What the phone can do
+## Privacy and security
 
-| Screen | What it does | Permission |
-| --- | --- | --- |
-| Desk | workspaces, windows (focus, close, move, float), browser tabs, custom actions, **open an installed app here or on a new empty workspace** (the `+` chip), **move a window to another workspace** (the arrow on each window) | `view`, `windows`, `exec`, `launch` |
-| Touchpad | pointer, scroll, clicks, drag, typing | `input` |
-| Keyboard | keys, shortcuts, live typing, clipboard to and from the PC, send and receive files, links | `input`, `clipboard`, `files` |
-| Media | player controls, volume, **phone speaker** (the PC's sound played on the phone) | `system`, `listen` |
-| Screen | **monitor brightness**; live preview of a monitor (a floating, draggable window on the other tabs); tap to click, double-tap to double-click, hold to right-click | `system` (brightness), `screen` (+ `input` to click) |
-| Power / lock | lock, sleep, restart, power off (confirm + countdown), type the password on the lock screen | `power`, `unlock` |
+- Nothing leaves your network. No telemetry, accounts or cloud. Machine and monitor serial numbers are never stored or sent.
+- A phone is trusted because it holds a key you approved, not because it is on your Wi-Fi. The app only talks to the certificate it paired with.
+- The agent runs as you, never as root. Screen frames, clipboard text and files are never kept; passwords are typed only while the PC is locked and never logged.
+- Starting the screen preview or the phone speaker, launching apps, power actions and permission changes are audit-logged and shown as a desktop notice.
 
-A newly paired phone only gets `view`, `input`, `windows` and `system`. Everything that reads, plays or sends something from your PC is a separate permission you give on the PC:
+Details, limits and how to report a problem: [SECURITY.md](SECURITY.md).
 
-```bash
-zenvyd devices                     # ids of the paired phones
-zenvyd grant <id> screen           # also: listen clipboard files exec launch power unlock
-zenvyd revoke <id>                 # remove a phone entirely
-zenvyd send ~/report.pdf           # offer a file to the connected phones
-```
+## How it works
 
-When the PC is locked the phone gets a lock page (media, volume, brightness, power and unlock only): no windows, input, tabs, clipboard, files or screen. Starting and stopping the screen preview or the phone speaker is logged and shown as a desktop notification.
+| Crate | Role |
+| --- | --- |
+| `zenvyd` | the agent and its command line |
+| `zenvy-net` | HTTPS and WebSocket server, pairing, permissions, the phone UI (`page.html`) |
+| `zenvy-hyprland` | Hyprland IPC: state and typed commands |
+| `zenvy-input`, `zenvy-audio`, `zenvy-media`, `zenvy-brightness`, `zenvy-power`, `zenvy-screen`, `zenvy-stream`, `zenvy-apps`, `zenvy-icons` | one backend each, with fakes for tests |
+| `zenvy-auth`, `zenvy-proto`, `zenvy-config`, `zenvy-core`, `zenvy-profiler` | keys and pairing, message types, configuration, capability model, local device profile |
+| `android/`, `browser-extension/` | the certificate-pinned Android shell, the optional tab bridge |
 
-## Configuration (optional)
+The phone UI is one embedded web page served by the agent, shown in a thin native Android shell. [PLAN.md](PLAN.md) holds the full design and records what was verified and what is still assumed.
 
-`~/.config/zenvy/config.toml`, every key has a default:
-
-```toml
-[files]
-inbox = "~/Downloads/Zenvy"      # where files from the phone land (never overwritten)
-max_size_mb = 2048
-
-[lock]
-unlock_from_phone = true         # allow typing the password from a phone that has `unlock`
-
-[[actions]]                      # buttons on the Desk screen; a fixed argument list, never a shell line
-id = "hello"
-label = "Say hello"
-argv = ["notify-send", "Hello from the phone"]
-confirm = false                  # true = ask on the phone first
-```
-
-## Privacy and security in short
-
-* Nothing leaves your network. No telemetry, no accounts, no cloud. The phone trusts exactly one certificate (pinned from the pairing QR); the agent trusts exactly the phones you approved.
-* The agent runs as you, never as root. Passwords are typed through a virtual keyboard only while the PC is locked and are never logged or echoed.
-* Machine and monitor serial numbers are never stored or sent. Screen frames and files are never kept by the agent, only the file you chose to receive.
-* The app that shows the PC's screen needs `grim`; the phone speaker needs `parec`; clipboard needs `wl-clipboard`; notifications use `notify-send` when present. Anything missing simply turns that feature off (`zenvyd doctor` shows which).
-
-## Tests
+## Development
 
 ```bash
-cargo test                       # unit tests
-tests/run-e2e.sh                 # sandboxed end-to-end suite against a throwaway agent (needs a running Hyprland session)
+cargo build && cargo test --workspace
+cargo fmt --all && cargo clippy --workspace --all-targets
+tests/run-e2e.sh                  # sandboxed end-to-end suite; needs a running Hyprland session
 node tests/typing.mjs && node tests/worklet.mjs
+(cd android && ./gradlew testDebugUnitTest assembleDebug)
 ```
 
-The end-to-end suite drives only scratch windows named `zenvy-*`, keeps the pointer inside them, uses fake `systemctl`, `loginctl`, `wl-copy`, `grim` and friends (it never suspends the PC or captures the real screen), and refuses to run if a real `zenvyd` or a leftover scratch window exists.
+The end-to-end suite only touches scratch windows named `zenvy-*`, uses fake `systemctl`, `loginctl`, `grim`, `wl-copy` and friends (it never suspends your PC or captures your screen), and refuses to run if a real `zenvyd` is running. See [CONTRIBUTING.md](CONTRIBUTING.md). The screenshots and the demo are generated from the UI's built-in demo mode with `tools/screenshots.mjs`. Releases: [docs/RELEASING.md](docs/RELEASING.md), [docs/REPRODUCIBLE.md](docs/REPRODUCIBLE.md).
+
+## Uninstall
+
+```bash
+packaging/uninstall.sh            # removes the program and the service
+packaging/uninstall.sh --purge    # also deletes paired phones, the certificate, settings and the audit log
+```
+
+Files you received (`~/Downloads/Zenvy`), the Android app and the browser extension are yours to remove.
+
+## Status
+
+Feature-complete for daily use on Hyprland and heading for its first public release (0.1.0). It is tested on one machine (Arch Linux, Hyprland), so other distributions and compositors are untested for now. `spikes/` holds throwaway early experiments and is not part of the product.
+
+## License
+
+[MIT](LICENSE)
