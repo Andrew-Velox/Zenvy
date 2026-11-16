@@ -79,6 +79,30 @@ async fn handle(app: Arc<App>, stream: UnixStream, base: String) -> std::io::Res
             }
             put(&mut w, json!({ "type": "scoped", "ok": updated.is_some(), "name": updated.as_ref().map(|d| d.name.clone()), "scopes": updated.map(|d| d.scopes) })).await
         }
+        Some("send") => {
+            let path = req["path"].as_str().unwrap_or("");
+            let Some(files) = &app.cfg.files else {
+                return put(&mut w, json!({ "type": "scoped", "ok": false, "message": "file transfer is turned off" })).await;
+            };
+            match files.add_outgoing(std::path::Path::new(path)) {
+                Ok((id, name, size)) => {
+                    app.audit
+                        .record("file_offered", None, &crate::files::human_size(size));
+                    app.publish(
+                        "file.offer",
+                        json!({ "id": id, "name": name, "size": size }),
+                    );
+                    put(&mut w, json!({ "type": "scoped", "ok": true, "message": format!("offered {} ({}) to connected phones for 10 minutes", name, crate::files::human_size(size)) })).await
+                }
+                Err(e) => {
+                    put(
+                        &mut w,
+                        json!({ "type": "scoped", "ok": false, "message": e }),
+                    )
+                    .await
+                }
+            }
+        }
         Some("power_cancel") => {
             let done = app.power.as_ref().is_some_and(|p| p.cancel(None));
             if done {

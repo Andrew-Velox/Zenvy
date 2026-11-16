@@ -1,8 +1,9 @@
 use crate::app::{App, ApprovalRequest};
 use crate::tls::TlsMaterial;
 use crate::ws::ws_handler;
-use axum::extract::{ConnectInfo, DefaultBodyLimit, Request, State};
-use axum::http::{header, HeaderValue, StatusCode};
+use axum::body::Body;
+use axum::extract::{ConnectInfo, DefaultBodyLimit, Path, Request, State};
+use axum::http::{header, HeaderMap, HeaderValue, StatusCode};
 use axum::middleware::{self, Next};
 use axum::response::{Html, IntoResponse, Response};
 use axum::routing::{get, post};
@@ -187,6 +188,142 @@ async fn pair(
     }
 }
 
+/// `Content-Disposition` for a download: an ASCII fallback plus the real name percent-encoded (RFC 6266).
+fn content_disposition(name: &str) -> String {
+    let ascii: String = name
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || "._- ".contains(c) {
+                c
+            } else {
+                '_'
+            }
+        })
+        .collect();
+    let pct: String = name
+        .bytes()
+        .map(|b| {
+            if b.is_ascii_alphanumeric() || b"._-".contains(&b) {
+                (b as char).to_string()
+            } else {
+                format!("%{b:02X}")
+            }
+        })
+        .collect();
+    format!("attachment; filename=\"{ascii}\"; filename*=UTF-8''{pct}")
+}
+
+/// A phone streams a file it asked permission for (`file offer` over the WebSocket gave the one-time ticket).
+/// The ticket is the credential; the size must match what was promised; nothing is kept unless it is complete.
+async fn upload(
+    State(app): State<Arc<App>>,
+    Path(ticket): Path<String>,
+    headers: HeaderMap,
+    body: Body,
+) -> Response {
+    use crate::files::UploadError;
+    let Some(files) = app.cfg.files.clone() else {
+        return StatusCode::NOT_FOUND.into_response();
+    };
+    if app.is_locked() {
+        return (StatusCode::LOCKED, "the PC is locked").into_response();
+    }
+    let Some(offer) = files.take_upload(&ticket) else {
+        return StatusCode::NOT_FOUND.into_response();
+    };
+    let declared = headers
+        .get(header::CONTENT_LENGTH)
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.parse::<u64>().ok());
+    if declared != Some(offer.size) {
+        return (
+            StatusCode::BAD_REQUEST,
+            "the size does not match what was offered",
+        )
+            .into_response();
+    }
+    let Some(_running) = files.begin_upload() else {
+        return (StatusCode::TOO_MANY_REQUESTS, "too many uploads at once").into_response();
+    };
+    match files
+        .receive(&offer, Box::pin(body.into_data_stream()))
+        .await
+    {
+        Ok((name, size)) => {
+            app.audit.record(
+                "file_received",
+                Some(&offer.device),
+                &crate::files::human_size(size),
+            );
+            let who = app
+                .store
+                .lock()
+                .unwrap()
+                .get(&offer.device)
+                .map(|d| crate::listen::clean_name(&d.name))
+                .unwrap_or_default();
+            crate::listen::notify_text(
+                &app,
+                &format!(
+                    "{who} sent you {} ({})",
+                    crate::files::display_name(&name),
+                    crate::files::human_size(size)
+                ),
+            )
+            .await;
+            Json(json!({ "ok": true, "name": name, "size": size })).into_response()
+        }
+        Err(UploadError::TooLarge) => {
+            (StatusCode::PAYLOAD_TOO_LARGE, "more data than offered").into_response()
+        }
+        Err(UploadError::Short) | Err(UploadError::Aborted) => {
+            (StatusCode::BAD_REQUEST, "the upload was not complete").into_response()
+        }
+        Err(UploadError::Io(_)) => (
+            StatusCode::INSUFFICIENT_STORAGE,
+            "the PC could not store the file",
+        )
+            .into_response(),
+    }
+}
+
+/// A phone downloads a file the person at the PC offered and the phone accepted. Once.
+async fn download(State(app): State<Arc<App>>, Path(ticket): Path<String>) -> Response {
+    let Some(files) = app.cfg.files.clone() else {
+        return StatusCode::NOT_FOUND.into_response();
+    };
+    if app.is_locked() {
+        return (StatusCode::LOCKED, "the PC is locked").into_response();
+    }
+    let Some(t) = files.take_download(&ticket) else {
+        return StatusCode::NOT_FOUND.into_response();
+    };
+    let Ok(file) = tokio::fs::File::open(&t.path).await else {
+        return StatusCode::GONE.into_response();
+    };
+    match file.metadata().await {
+        Ok(m) if m.is_file() && m.len() == t.size => {}
+        _ => return StatusCode::GONE.into_response(), // changed since it was offered
+    }
+    app.audit.record(
+        "file_sent",
+        Some(&t.device),
+        &crate::files::human_size(t.size),
+    );
+    let stream = tokio_util::io::ReaderStream::with_capacity(file, 64 * 1024);
+    let mut res = Response::new(Body::from_stream(stream));
+    let h = res.headers_mut();
+    h.insert(
+        header::CONTENT_TYPE,
+        HeaderValue::from_static("application/octet-stream"),
+    );
+    h.insert(header::CONTENT_LENGTH, HeaderValue::from(t.size));
+    if let Ok(v) = HeaderValue::from_str(&content_disposition(&t.name)) {
+        h.insert(header::CONTENT_DISPOSITION, v);
+    }
+    res
+}
+
 pub fn router(app: Arc<App>) -> Router {
     Router::new()
         .route("/", get(index))
@@ -194,6 +331,11 @@ pub fn router(app: Arc<App>) -> Router {
         .route("/api/hello", get(hello))
         .route("/api/pair", post(pair).layer(DefaultBodyLimit::max(4096)))
         .route("/ws", get(ws_handler))
+        .route(
+            "/upload/{ticket}",
+            post(upload).layer(DefaultBodyLimit::disable()),
+        )
+        .route("/download/{ticket}", get(download))
         .layer(middleware::from_fn_with_state(app.clone(), guard))
         .with_state(app)
 }

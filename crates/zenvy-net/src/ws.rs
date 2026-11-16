@@ -334,7 +334,7 @@ async fn handle(app: &Arc<App>, ctx: &mut Ctx, m: Msg) -> (Option<Value>, bool) 
     if app.is_locked()
         && matches!(
             m.t.as_str(),
-            "cmd" | "input" | "browser" | "favicon" | "action" | "clipboard"
+            "cmd" | "input" | "browser" | "favicon" | "action" | "clipboard" | "file"
         )
     {
         return err("pc_locked", "The PC is locked. Unlock it first.", false);
@@ -454,6 +454,60 @@ async fn handle(app: &Arc<App>, ctx: &mut Ctx, m: Msg) -> (Option<Value>, bool) 
                 Some(json!({ "v": 1, "t": "icon", "id": id, "data": data })),
                 false,
             )
+        }
+        "file" => {
+            // Permission to move files: the phone gets a one-time ticket for the HTTPS transfer, the bytes do not use this socket.
+            if !ctx.scopes.contains("files") {
+                return err("forbidden", &format!("This phone may not transfer files yet. On the PC run: zenvyd grant {} files", ctx.device_id), false);
+            }
+            let Some(files) = &app.cfg.files else {
+                return err(
+                    "capability_unavailable",
+                    "file transfer is turned off on this PC",
+                    false,
+                );
+            };
+            match m.data.get("cmd").and_then(Value::as_str).unwrap_or("") {
+                "offer" => {
+                    let (Some(name), Some(size)) = (
+                        m.data.get("name").and_then(Value::as_str),
+                        m.data.get("size").and_then(Value::as_u64),
+                    ) else {
+                        return err("invalid_command", "name and size are required", true);
+                    };
+                    match files.offer_upload(&ctx.device_id, name, size) {
+                        Ok((ticket, clean)) => (
+                            Some(
+                                json!({ "v": 1, "t": "file", "id": id, "data": { "state": "ticket", "url": format!("/upload/{ticket}"), "name": clean } }),
+                            ),
+                            false,
+                        ),
+                        Err(e) => err("refused", e, false),
+                    }
+                }
+                "accept" => {
+                    let Some(offer) = m.data.get("id").and_then(Value::as_str) else {
+                        return err("invalid_command", "id is required", true);
+                    };
+                    match files.accept_outgoing(offer, &ctx.device_id) {
+                        Some((ticket, name, size)) => (
+                            Some(
+                                json!({ "v": 1, "t": "file", "id": id, "data": { "state": "ticket", "url": format!("/download/{ticket}"), "name": name, "size": size } }),
+                            ),
+                            false,
+                        ),
+                        None => err("not_found", "that offer is gone", false),
+                    }
+                }
+                "dismiss" => {
+                    let Some(offer) = m.data.get("id").and_then(Value::as_str) else {
+                        return err("invalid_command", "id is required", true);
+                    };
+                    files.dismiss_outgoing(offer);
+                    (Some(ack()), false)
+                }
+                _ => err("invalid_command", "unknown file command", true),
+            }
         }
         "clipboard" => {
             // Explicit transfers only: nothing here runs unless a person tapped a button on the phone.

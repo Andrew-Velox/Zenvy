@@ -82,6 +82,10 @@ pub async fn snapshot(app: &App) -> Value {
         "brightness": brightness_state(app),
         "power": power_state(app).await,
         "actions": crate::actions::public_view(&app.cfg.actions),
+        "files": match &app.cfg.files {
+            Some(f) => json!({ "enabled": true, "max_bytes": f.max_bytes, "offers": f.outgoing_list().into_iter().map(|(id, name, size)| json!({ "id": id, "name": name, "size": size })).collect::<Vec<_>>() }),
+            None => json!({ "enabled": false }),
+        },
         "share": { "clipboard": app.cfg.clipboard.is_some(), "open_link": app.cfg.clipboard.as_ref().is_some_and(|c| c.open.is_some()) },
     })
 }

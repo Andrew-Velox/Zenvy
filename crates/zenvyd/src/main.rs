@@ -22,6 +22,8 @@ enum Cmd {
         #[arg(long)]
         json: bool,
     },
+    /// Offer a file to the connected phones (they choose whether to download it).
+    Send { path: std::path::PathBuf },
     /// Stop a suspend, restart or power-off that a phone has confirmed and that is still counting down.
     PowerCancel,
     /// Calibration helper: prints, once a second, every signal used to tell whether the PC is locked
@@ -101,6 +103,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         Cmd::Serve => serve_cmd().await?,
         Cmd::PowerCancel => power_cancel_cmd().await?,
+        Cmd::Send { path } => send_cmd(path).await?,
         Cmd::LockProbe => lock_probe_cmd().await?,
         Cmd::Pair => pair_cmd().await?,
         Cmd::Grant { id, scope } => scope_cmd("grant", id, scope).await?,
@@ -477,6 +480,23 @@ async fn build_brightness(
     Some(std::sync::Arc::new(adapter))
 }
 
+/// File transfer: the inbox folder (`~` expands to the home folder) and the size limit.
+fn build_files(cfg: &zenvy_config::Config) -> Option<std::sync::Arc<zenvy_net::Transfers>> {
+    let raw = cfg.files.inbox.trim();
+    let inbox = match raw.strip_prefix("~/") {
+        Some(rest) => std::path::PathBuf::from(std::env::var_os("HOME")?).join(rest),
+        None => std::path::PathBuf::from(raw),
+    };
+    let t = zenvy_net::Transfers::new(inbox.clone(), cfg.files.max_size_mb * 1024 * 1024);
+    t.clean_stale_parts();
+    eprintln!(
+        "file transfer: ready (inbox {}, up to {} MB); phones need the 'files' permission (zenvyd grant <id> files)",
+        inbox.display(),
+        cfg.files.max_size_mb
+    );
+    Some(std::sync::Arc::new(t))
+}
+
 /// Clipboard transfer and link opening need wl-clipboard (`wl-copy`, `wl-paste`); `xdg-open` adds link opening.
 fn build_clipboard(sc: &Scan) -> Option<zenvy_net::ClipboardTools> {
     let tool = |n: &str| {
@@ -736,6 +756,7 @@ async fn serve_cmd() -> Result<(), Box<dyn std::error::Error>> {
         allowed_hosts: hosts,
         features: cfg.features.clone(),
         clipboard: build_clipboard(&sc),
+        files: build_files(&cfg),
         actions: cfg
             .actions
             .iter()
@@ -850,6 +871,26 @@ async fn admin_line(
         return Err("agent closed the connection".into());
     }
     Ok(serde_json::from_str(&l)?)
+}
+
+async fn send_cmd(path: std::path::PathBuf) -> Result<(), Box<dyn std::error::Error>> {
+    use tokio::io::AsyncWriteExt;
+    let abs =
+        std::fs::canonicalize(&path).map_err(|e| format!("cannot read {}: {e}", path.display()))?;
+    let (mut r, mut w) = admin_connect().await?;
+    w.write_all(format!("{}\n", serde_json::json!({ "op": "send", "path": abs })).as_bytes())
+        .await?;
+    let m = admin_line(&mut r).await?;
+    if m["ok"] == true {
+        println!("{}", m["message"].as_str().unwrap_or("offered"));
+        Ok(())
+    } else {
+        Err(m["message"]
+            .as_str()
+            .unwrap_or("the agent refused")
+            .to_string()
+            .into())
+    }
 }
 
 async fn power_cancel_cmd() -> Result<(), Box<dyn std::error::Error>> {

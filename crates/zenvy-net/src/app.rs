@@ -42,6 +42,8 @@ pub struct NetConfig {
     pub actions: Vec<crate::actions::ActionDef>,
     /// `None` when `wl-copy`/`wl-paste` are missing: no clipboard transfer.
     pub clipboard: Option<crate::clipboard::ClipboardTools>,
+    /// `None` when file transfer is off.
+    pub files: Option<Arc<crate::files::Transfers>>,
 }
 
 pub struct App {
@@ -155,6 +157,7 @@ impl App {
                 "desktop.state" => crate::state::redacted_desktop(),
                 "browser.tabs" => serde_json::json!({ "browsers": [] }),
                 "browser.favicons" => serde_json::json!({ "hosts": [] }),
+                "file.offer" => serde_json::Value::Null,
                 _ => value,
             }
         } else {

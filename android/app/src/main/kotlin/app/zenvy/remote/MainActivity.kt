@@ -2,6 +2,7 @@ package app.zenvy.remote
 
 import android.app.Activity
 import android.content.ClipData
+import android.content.ContentValues
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
@@ -9,10 +10,16 @@ import android.content.res.Configuration
 import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
+import android.net.Uri
 import android.net.http.SslCertificate
 import android.net.http.SslError
 import android.os.Build
 import android.os.Bundle
+import android.os.Environment
+import android.provider.MediaStore
+import java.io.File
+import java.io.IOException
+import java.io.InputStream
 import android.text.InputType
 import android.view.Gravity
 import android.view.View
@@ -33,6 +40,7 @@ import com.google.mlkit.vision.codescanner.GmsBarcodeScanning
  *  - The device key lives in the WebView's app-private storage and is non-extractable.
  */
 class MainActivity : Activity() {
+    private companion object { const val REQ_FILES = 41 }
     private lateinit var store: PinStore
     private lateinit var web: WebView
     private lateinit var setupPanel: View
@@ -42,6 +50,8 @@ class MainActivity : Activity() {
     private var pin: PairLink? = null
     /** Text another app shared to Zenvy. It is only ever handed to the page as a string, and the person confirms what to do with it. */
     private var pendingShare: String = ""
+    /** The pending "choose files" request from the page (<input type=file>). */
+    private var fileChooser: ValueCallback<Array<Uri>>? = null
 
     private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
 
@@ -128,6 +138,53 @@ class MainActivity : Activity() {
     }
 
     @Deprecated("Deprecated in Java")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        if (requestCode == REQ_FILES) {
+            fileChooser?.onReceiveValue(WebChromeClient.FileChooserParams.parseResult(resultCode, data))
+            fileChooser = null
+        } else @Suppress("DEPRECATION") super.onActivityResult(requestCode, resultCode, data)
+    }
+
+    /** Downloads a file the PC offered into Downloads/Zenvy, over a connection that trusts only the pinned certificate. */
+    private fun downloadFromPc(path: String, rawName: String) {
+        val p = pin
+        if (p == null || !Downloader.isValidPath(path)) { toast("That download is not valid"); return }
+        val name = Downloader.sanitizeName(rawName)
+        Thread {
+            try {
+                val c = Downloader.open(p, path)
+                if (c.responseCode != 200) throw IOException("the PC answered ${c.responseCode}")
+                c.inputStream.use { saveDownload(name, it) }
+                toast("Saved $name to Downloads/Zenvy")
+            } catch (e: Exception) {
+                toast("Download failed: ${e.message?.take(80) ?: "error"}")
+            }
+        }.start()
+    }
+
+    private fun saveDownload(name: String, input: InputStream) {
+        if (Build.VERSION.SDK_INT >= 29) {
+            val values = ContentValues().apply {
+                put(MediaStore.Downloads.DISPLAY_NAME, name)
+                put(MediaStore.Downloads.MIME_TYPE, "application/octet-stream")
+                put(MediaStore.Downloads.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS + "/Zenvy")
+                put(MediaStore.Downloads.IS_PENDING, 1)
+            }
+            val uri = contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values) ?: throw IOException("cannot create the file")
+            try {
+                (contentResolver.openOutputStream(uri) ?: throw IOException("cannot write the file")).use { input.copyTo(it, 64 * 1024) }
+                values.clear(); values.put(MediaStore.Downloads.IS_PENDING, 0)
+                contentResolver.update(uri, values, null, null)
+            } catch (e: Exception) { contentResolver.delete(uri, null, null); throw e }
+        } else {
+            val dir = File(getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS), "Zenvy").apply { mkdirs() }
+            File(dir, name).outputStream().use { input.copyTo(it, 64 * 1024) }
+        }
+    }
+
+    private fun toast(msg: String) = runOnUiThread { Toast.makeText(this, msg, Toast.LENGTH_LONG).show() }
+
+    @Deprecated("Deprecated in Java")
     override fun onBackPressed() {
         if (web.visibility == View.VISIBLE && web.canGoBack()) web.goBack() else @Suppress("DEPRECATION") super.onBackPressed()
     }
@@ -148,6 +205,16 @@ class MainActivity : Activity() {
             userAgentString = "$userAgentString ZenvyApp/${BuildConfig.VERSION_NAME}"
         }
         addJavascriptInterface(Bridge(), "ZenvyApp")
+        webChromeClient = object : WebChromeClient() {
+            // Lets the page pick files to send to the PC. The page only ever receives the chosen files, nothing else on the phone.
+            override fun onShowFileChooser(w: WebView, cb: ValueCallback<Array<Uri>>, params: FileChooserParams): Boolean {
+                fileChooser?.onReceiveValue(null)
+                fileChooser = cb
+                return try {
+                    startActivityForResult(params.createIntent(), REQ_FILES); true
+                } catch (_: Exception) { fileChooser = null; false }
+            }
+        }
         webViewClient = object : WebViewClient() {
             override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean =
                 pin?.isSameOrigin(request.url.toString()) != true // block everything that is not the paired PC
@@ -197,6 +264,8 @@ class MainActivity : Activity() {
             val cm = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
             cm.setPrimaryClip(ClipData.newPlainText("Zenvy", text.take(65_536)))
         }
+        /** Download a file the PC offered (`/download/<ticket>` on the paired PC), saved to Downloads/Zenvy. */
+        @JavascriptInterface fun download(path: String, name: String) { runOnUiThread { downloadFromPc(path, name) } }
         /** The text another app shared with Zenvy, once. */
         @JavascriptInterface fun takeShare(): String { val t = pendingShare; pendingShare = ""; return t }
         /** The page tells us its surface colours so the system bars and WebView background match the theme. */

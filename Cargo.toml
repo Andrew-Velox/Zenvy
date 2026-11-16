@@ -47,6 +47,8 @@ zenvy-stream = { path = "crates/zenvy-stream" }
 zenvy-icons = { path = "crates/zenvy-icons" }
 zenvy-power = { path = "crates/zenvy-power" }
 zeroize = "1"
+bytes = "1"
+tokio-util = { version = "0.7", features = ["io"] }
 zenvy-brightness = { path = "crates/zenvy-brightness" }
 zenvy-media = { path = "crates/zenvy-media" }
 

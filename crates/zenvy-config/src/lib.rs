@@ -83,6 +83,23 @@ pub struct Action {
     pub icon: Option<String>,
 }
 
+/// File transfer: where received files go and how big one may be.
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(default)]
+pub struct Files {
+    /// Folder for files sent from the phone (`~` is the home folder). Created on first use.
+    pub inbox: String,
+    pub max_size_mb: u64,
+}
+impl Default for Files {
+    fn default() -> Self {
+        Self {
+            inbox: "~/Downloads/Zenvy".into(),
+            max_size_mb: 2048,
+        }
+    }
+}
+
 /// Lock screen detection and the power sheet.
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(default)]
@@ -141,6 +158,7 @@ pub struct Config {
     pub security: Security,
     pub browser: Browser,
     pub lock: Lock,
+    pub files: Files,
     pub actions: Vec<Action>,
 }
 
@@ -203,6 +221,16 @@ pub fn parse(text: &str) -> Result<Loaded, ConfigError> {
         ));
     }
     validate_actions(&config.actions)?;
+    if config.files.max_size_mb == 0 || config.files.max_size_mb > 65_536 {
+        return Err(ConfigError::Invalid(
+            "files.max_size_mb must be between 1 and 65536".into(),
+        ));
+    }
+    if config.files.inbox.trim().is_empty() || config.files.inbox.contains('\0') {
+        return Err(ConfigError::Invalid(
+            "files.inbox must be a folder path".into(),
+        ));
+    }
     Ok(Loaded { config, warnings })
 }
 

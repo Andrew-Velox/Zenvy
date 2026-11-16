@@ -571,6 +571,82 @@ else {
     ok(fsx.existsSync(`${FD}/notify.log`) && fsx.readFileSync(`${FD}/notify.log`, 'utf8').includes("read this PC's clipboard"), 'the person at the PC is notified when the clipboard is read');
     cc.ws.close(); }
 
+
+  console.log('-- file transfer (phone -> PC inbox, PC -> phone offers)');
+  { const cryptoM = await import('node:crypto'); const httpsM = (await import('node:https')).default;
+    const INBOX = `${pathx.dirname(process.env.ZENVY_FAKE_DIR)}/inbox`, FD = process.env.ZENVY_FAKE_DIR, lockedPath = `${FD}/locked`;
+    const ls = () => (fsx.existsSync(INBOX) ? fsx.readdirSync(INBOX) : []);
+    const au = () => (process.env.ZENVY_AUDIT && fsx.existsSync(process.env.ZENVY_AUDIT)) ? fsx.readFileSync(process.env.ZENVY_AUDIT, 'utf8') : '';
+    const cf = await wsConnect(phone, dev); const snapF = await cf.until(m => m.t === 'snapshot');
+    const ask = async (id, data) => { cf.send({ t: 'file', id, data }); return cf.until(m => m.id === id); };
+    // a raw HTTPS request so sizes, aborts and headers are under the test's control
+    const http = (method, path, { body = null, length = null, abortAfter = null } = {}) => new Promise(res => {
+      const r = httpsM.request({ host: '127.0.0.1', port: PORT, path, method, headers: { host: HOST, ...(length !== null ? { 'content-length': String(length) } : {}) }, rejectUnauthorized: false }, x => { const c = []; x.on('data', d => c.push(d)); x.on('end', () => res({ status: x.statusCode, headers: x.headers, body: Buffer.concat(c) })); });
+      r.on('error', () => res({ status: 0, body: Buffer.alloc(0) }));
+      if (abortAfter !== null) { r.write(Buffer.alloc(abortAfter, 7)); setTimeout(() => r.destroy(), 150); } else { if (body) r.write(body); r.end(); }
+    });
+    const upload = async (name, buf, opts = {}) => { const o = await ask('fo-' + Math.random().toString(36).slice(2, 7), { cmd: 'offer', name, size: opts.offerSize ?? buf.length }); if (o?.t !== 'file') return { offer: o }; const r = await http('POST', o.data.url, { body: buf, length: opts.length ?? buf.length }); return { offer: o, ...r }; };
+
+    ok(snapF.data.files?.enabled === true && snapF.data.files.max_bytes === 3 * 1024 * 1024 && Array.isArray(snapF.data.files.offers), 'the phone is told file transfer is on, with the size limit');
+    const no = await ask('f0', { cmd: 'offer', name: 'a.txt', size: 5 });
+    ok(no?.t === 'err' && no.data.code === 'forbidden' && no.data.message.includes(`zenvyd grant ${dev} files`), 'without the files permission nothing is offered and the grant command is shown');
+    await admin({ op: 'grant', id: dev, scope: 'files' }); await sleep(300);
+
+    // phone -> PC
+    const r1 = await upload('hello.txt', Buffer.from('hello world'));
+    ok(r1.status === 200 && JSON.parse(r1.body).name === 'hello.txt' && fsx.readFileSync(`${INBOX}/hello.txt`, 'utf8') === 'hello world', 'a file lands in the inbox with exactly its content');
+    const r2 = await upload('hello.txt', Buffer.from('second'));
+    ok(JSON.parse(r2.body).name === 'hello (1).txt' && fsx.readFileSync(`${INBOX}/hello.txt`, 'utf8') === 'hello world', 'the same name never overwrites: it becomes "hello (1).txt"');
+    for (const [raw, want] of [['../../../tmp/zv-escape.txt', 'zv-escape.txt'], ['.bashrc', 'bashrc'], ['a/b\\c.txt', 'c.txt']]) {
+      const r = await upload(raw, Buffer.from('x')); ok(r.status === 200 && JSON.parse(r.body).name === want && ls().includes(want), `hostile name ${JSON.stringify(raw)} is stored as ${JSON.stringify(want)} inside the inbox`);
+    }
+    ok(!fsx.existsSync('/tmp/zv-escape.txt'), 'nothing was written outside the inbox');
+    for (const bad of ['', '..', '/', '???']) { const o = await ask('fb' + bad.length, { cmd: 'offer', name: bad, size: 5 }); ok(o?.t === 'err', `unusable name ${JSON.stringify(bad)} is refused`); }
+    const o2 = await ask('f1', { cmd: 'offer', name: 'again.bin', size: 5 });
+    ok((await http('POST', o2.data.url, { body: Buffer.from('12345'), length: 5 })).status === 200 && (await http('POST', o2.data.url, { body: Buffer.from('12345'), length: 5 })).status === 404, 'a ticket works once');
+    ok((await http('POST', '/upload/' + '0'.repeat(48), { body: Buffer.from('x'), length: 1 })).status === 404, 'an unknown ticket is refused');
+    const before = ls().length;
+    const sh = await upload('short.bin', Buffer.alloc(10, 1), { length: 5, offerSize: 10 }); ok(sh.status === 400 && ls().length === before, 'a body smaller than offered is refused and nothing is kept');
+    const lg = await upload('long.bin', Buffer.alloc(10, 1), { offerSize: 5 }); ok(lg.status === 400 && ls().length === before, 'a body bigger than offered is refused and nothing is kept');
+    const big = cryptoM.randomBytes(2.5 * 1024 * 1024); const rb = await upload('big.bin', big);
+    ok(rb.status === 200 && cryptoM.createHash('sha256').update(fsx.readFileSync(`${INBOX}/big.bin`)).digest('hex') === cryptoM.createHash('sha256').update(big).digest('hex'), 'a 2.5 MB file arrives intact (checked by hash)');
+    ok((await ask('f2', { cmd: 'offer', name: 'huge.bin', size: 4 * 1024 * 1024 }))?.t === 'err' && (await ask('f3', { cmd: 'offer', name: 'zero.bin', size: 0 }))?.t === 'err', 'a file over the limit, or empty, is refused before any data is sent');
+    const ab = await ask('f4', { cmd: 'offer', name: 'vanish.bin', size: 1000000 });
+    await http('POST', ab.data.url, { abortAfter: 100000, length: 1000000 }); await sleep(800);
+    ok(!ls().includes('vanish.bin') && !ls().some(n => n.startsWith('.zenvy-part-')), 'a connection that drops mid-upload leaves no file and no part file');
+
+    // locked PC: transfers stop
+    const lk = await ask('f5', { cmd: 'offer', name: 'locked.txt', size: 3 });
+    const n0 = cf.msgs.length; fsx.writeFileSync(lockedPath, '');
+    const end = Date.now() + 6000; while (Date.now() < end && !cf.msgs.slice(n0).some(m => m.t === 'evt' && m.data.topic === 'power.state' && m.data.value.lock === 'locked')) await sleep(100);
+    ok((await http('POST', lk.data.url, { body: Buffer.from('abc'), length: 3 })).status === 423 && !ls().includes('locked.txt'), 'while the PC is locked an upload is refused');
+    ok((await ask('f6', { cmd: 'offer', name: 'l2.txt', size: 3 }))?.data.code === 'pc_locked', 'and so is asking for permission');
+    const n1 = cf.msgs.length; fsx.unlinkSync(lockedPath);
+    const end2 = Date.now() + 6000; while (Date.now() < end2 && !cf.msgs.slice(n1).some(m => m.t === 'evt' && m.data.topic === 'power.state' && m.data.value.lock === 'unlocked')) await sleep(100);
+
+    // PC -> phone
+    const src = `${FD}/outgoing report.pdf`; fsx.writeFileSync(src, 'PDF-BYTES-0123456789');
+    const sent = (await admin({ op: 'send', path: src })).find(l => l.type === 'scoped');
+    ok(sent?.ok === true, 'the person at the PC can offer a file (zenvyd send)');
+    const offerEvt = await cf.until(m => m.t === 'evt' && m.data.topic === 'file.offer', 4000);
+    ok(offerEvt?.data.value.name === 'outgoing report.pdf' && offerEvt.data.value.size === 20, 'connected phones are told about the offer (name and size only)');
+    const acc = await ask('f7', { cmd: 'accept', id: offerEvt.data.value.id });
+    const dl = await http('GET', acc.data.url);
+    ok(dl.status === 200 && dl.body.toString() === 'PDF-BYTES-0123456789' && /attachment; filename="outgoing report.pdf"; filename\*=UTF-8''outgoing%20report\.pdf/.test(dl.headers['content-disposition']), 'accepting downloads the file once, with a safe Content-Disposition');
+    ok((await http('GET', acc.data.url)).status === 404 && (await ask('f8', { cmd: 'accept', id: offerEvt.data.value.id }))?.data.code === 'not_found', 'a download ticket and an offer are single use');
+    ok((await admin({ op: 'send', path: FD })).find(l => l.type === 'scoped')?.ok === false && (await admin({ op: 'send', path: `${FD}/nope` })).find(l => l.type === 'scoped')?.ok === false, 'a folder or a missing file cannot be offered');
+    fsx.writeFileSync(`${FD}/big-out.bin`, Buffer.alloc(4 * 1024 * 1024));
+    ok((await admin({ op: 'send', path: `${FD}/big-out.bin` })).find(l => l.type === 'scoped')?.ok === false, 'a file over the limit cannot be offered');
+    const again = (await admin({ op: 'send', path: src })).find(l => l.type === 'scoped'); const ev2 = await cf.until(m => m.t === 'evt' && m.data.topic === 'file.offer' && m.data.value.id !== offerEvt.data.value.id, 4000);
+    ok((await ask('f9', { cmd: 'dismiss', id: ev2.data.value.id }))?.t === 'ack' && (await ask('f10', { cmd: 'accept', id: ev2.data.value.id }))?.data.code === 'not_found', 'an offer can be dismissed');
+    const a = au();
+    ok(a.includes('"file_received"') && a.includes('"file_sent"') && a.includes('"file_offered"') && !a.includes('hello.txt') && !a.includes('report.pdf') && !a.includes('zv-escape'), 'transfers are audit-logged by size, never by file name');
+    ok(fsx.readFileSync(`${FD}/notify.log`, 'utf8').includes('sent you hello.txt'), 'the person at the PC is notified when a file arrives');
+    // at most four waiting offers per phone
+    let granted = 0, refused = false; for (let i = 0; i < 8 && !refused; i++) { const t = await ask('fq' + i, { cmd: 'offer', name: 'q' + i + '.txt', size: 5 }); if (t?.t === 'file') granted++; else refused = true; }
+    ok(refused && granted >= 1 && granted <= 4, `a phone cannot hold more than four waiting offers (${granted} more were granted before the refusal)`);
+    cf.ws.close(); }
+
   console.log('-- power and lock (fake systemctl/loginctl: nothing real is ever suspended, restarted or locked)');
   { const FD = process.env.ZENVY_FAKE_DIR;
     const plogPath = `${FD}/power.log`, lockedPath = `${FD}/locked`;
@@ -599,7 +675,7 @@ else {
     const cl = await wsConnect(phone, dev); const snapL = await cl.until(m => m.t === 'snapshot');
     ok(snapL.data.power.lock === 'locked' && snapL.data.desktop.windows.length === 0 && snapL.data.desktop.workspaces.length === 0 && snapL.data.browser.browsers.length === 0, 'a phone that connects while the PC is locked is sent no windows, workspaces or tabs');
     const asked = async (type, id, data) => { cl.send({ t: type, id, data }); return cl.until(m => m.id === id); };
-    for (const [type, id, data, why] of [['cmd', 'lk1', { cmd: 'switch_workspace', id: 1 }, 'switching workspaces'], ['input', 'lk2', { cmd: 'pointer_move', dx: 0, dy: 0 }, 'the pointer'], ['browser', 'lk3', { cmd: 'close_tab', browser: 1, tab: 1 }, 'closing browser tabs'], ['favicon', 'lk7', { host: 'docs.rs' }, 'site icons'], ['action', 'lk8', { cmd: 'run', id: 'mark' }, 'custom actions'], ['clipboard', 'lk9', { cmd: 'get' }, 'the clipboard']]) {
+    for (const [type, id, data, why] of [['cmd', 'lk1', { cmd: 'switch_workspace', id: 1 }, 'switching workspaces'], ['input', 'lk2', { cmd: 'pointer_move', dx: 0, dy: 0 }, 'the pointer'], ['browser', 'lk3', { cmd: 'close_tab', browser: 1, tab: 1 }, 'closing browser tabs'], ['favicon', 'lk7', { host: 'docs.rs' }, 'site icons'], ['action', 'lk8', { cmd: 'run', id: 'mark' }, 'custom actions'], ['clipboard', 'lk9', { cmd: 'get' }, 'the clipboard'], ['file', 'lk10', { cmd: 'offer', name: 'a.txt', size: 5 }, 'file transfer']]) {
       const r = await asked(type, id, data); ok(r?.t === 'err' && r.data.code === 'pc_locked', `refused while locked: ${why}`);
     }
     ok((await asked('audio', 'lk4', { cmd: 'set_volume', percent: 33 }))?.t === 'ack', 'volume still works while locked');

@@ -28,6 +28,13 @@ for f in loginctl systemctl busctl wl-copy wl-paste xdg-open; do cp "$ROOT/tests
 cp "$ROOT/tests/fakes/parec" "$TMP/bin/parec"; cp "$ROOT/tests/fakes/notify-send" "$TMP/bin/notify-send"
 echo '{"ddc":[{"bus":2,"connector":"card1-HDMI-A-1","model":"Fake Monitor","serial":"SERIAL-SECRET-999","cur":50,"max":100}]}' > "$TMP/fake/bright.json"
 
+# file transfer: a private inbox and a 3 MB limit
+cat >> "$TMP/cfg/zenvy/config.toml" <<FILES
+[files]
+inbox = "$TMP/inbox"
+max_size_mb = 3
+FILES
+
 # custom actions: harmless fixed commands (touch a marker file / fail), never a shell line
 cat >> "$TMP/cfg/zenvy/config.toml" <<ACT
 [[actions]]
