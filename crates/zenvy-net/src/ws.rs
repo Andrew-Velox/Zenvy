@@ -393,7 +393,7 @@ async fn handle(app: &Arc<App>, ctx: &mut Ctx, m: Msg) -> (Option<Value>, bool) 
     if app.is_locked()
         && matches!(
             m.t.as_str(),
-            "cmd" | "input" | "browser" | "favicon" | "action" | "clipboard" | "file" | "screen"
+            "cmd" | "input" | "browser" | "favicon" | "action" | "clipboard" | "file" | "screen" | "apps"
         )
     {
         return err("pc_locked", "The PC is locked. Unlock it first.", false);
@@ -894,6 +894,112 @@ async fn handle(app: &Arc<App>, ctx: &mut Ctx, m: Msg) -> (Option<Value>, bool) 
                 )
             }
         }
+        "apps" => {
+            // The app launcher: the phone sees installed applications (names and ids) and asks to start one by id,
+            // optionally on a new empty workspace. The command line comes from the PC's desktop entry, never the phone.
+            if !ctx.scopes.contains("launch") {
+                return err(
+                    "forbidden",
+                    &format!(
+                        "This phone may not open apps yet. On the PC run: zenvyd grant {} launch",
+                        ctx.device_id
+                    ),
+                    false,
+                );
+            }
+            let Some(apps) = app.cfg.apps.clone() else {
+                return err(
+                    "capability_unavailable",
+                    "app launching is not available on this PC",
+                    false,
+                );
+            };
+            match m.data.get("cmd").and_then(Value::as_str).unwrap_or("") {
+                "list" => {
+                    let a2 = apps.clone();
+                    let list = tokio::task::spawn_blocking(move || a2.list())
+                        .await
+                        .unwrap_or_default();
+                    let items: Vec<Value> = list
+                        .iter()
+                        .map(|a| json!({ "id": a.id, "name": a.name }))
+                        .collect();
+                    (
+                        Some(json!({ "v": 1, "t": "apps", "id": id, "data": { "apps": items } })),
+                        false,
+                    )
+                }
+                "launch" => {
+                    let aid = m.data.get("id").and_then(Value::as_str).unwrap_or("");
+                    if !zenvy_apps::valid_id(aid) {
+                        return err("invalid_command", "bad app id", true);
+                    }
+                    // where it opens: this workspace, the lowest empty one, or a numbered one
+                    enum Target {
+                        Here,
+                        Empty,
+                        Id(i64),
+                    }
+                    let target = match m.data.get("workspace") {
+                        None => Target::Here,
+                        Some(Value::String(w)) if w == "here" => Target::Here,
+                        Some(Value::String(w)) if w == "empty" => Target::Empty,
+                        Some(Value::Number(n)) => match n.as_i64() {
+                            Some(i) if (1..=1000).contains(&i) => Target::Id(i),
+                            _ => return err("invalid_command", "workspace out of range", true),
+                        },
+                        _ => return err("invalid_command", "bad workspace", true),
+                    };
+                    let a2 = apps.clone();
+                    let aid2 = aid.to_string();
+                    let found = tokio::task::spawn_blocking(move || a2.find(&aid2))
+                        .await
+                        .ok()
+                        .flatten();
+                    let Some(entry) = found else {
+                        return err("unknown_app", "that app is not installed", false);
+                    };
+                    let ws_id = match target {
+                        Target::Here => None,
+                        Target::Id(i) => Some(i),
+                        Target::Empty => match app.adapter.workspaces().await {
+                            Ok(list) => Some(lowest_empty_workspace(&list)),
+                            Err(e) => return err("failed", &e.to_string(), false),
+                        },
+                    };
+                    if let Some(w) = ws_id {
+                        if !ctx.scopes.contains("windows") {
+                            return err(
+                                "forbidden",
+                                &format!("Switching workspaces needs the windows permission. On the PC run: zenvyd grant {} windows", ctx.device_id),
+                                false,
+                            );
+                        }
+                        if let Err(e) = app
+                            .adapter
+                            .execute(&DesktopCommand::SwitchWorkspace { id: w })
+                            .await
+                        {
+                            return err("failed", &e.to_string(), false);
+                        }
+                    }
+                    // the audit line names the program, never its arguments
+                    app.audit.record(
+                        "app_launch",
+                        Some(&ctx.device_id),
+                        &format!("{} ({})", entry.id, entry.program()),
+                    );
+                    match zenvy_apps::launch(&entry) {
+                        Ok(()) => (
+                            Some(json!({ "v": 1, "t": "apps", "id": id, "data": { "state": "launched", "name": entry.name, "workspace": ws_id } })),
+                            false,
+                        ),
+                        Err(e) => err("failed", &e, false),
+                    }
+                }
+                _ => err("invalid_command", "unknown apps command", true),
+            }
+        }
         "screen" => {
             use zenvy_proto::ScreenCommand;
             let cmd: ScreenCommand = match serde_json::from_value(m.data) {
@@ -1264,5 +1370,43 @@ mod tests {
             "plain-http origin is rejected"
         );
         assert!(!origin_ok(&h(Some("null"), "192.168.0.2:7878")));
+    }
+}
+
+/// The lowest numbered workspace (1 and up) that has no windows: where "open on a new workspace" goes.
+fn lowest_empty_workspace(list: &[zenvy_proto::Workspace]) -> i64 {
+    let busy: std::collections::HashSet<i64> =
+        list.iter().filter(|w| w.windows > 0).map(|w| w.id).collect();
+    (1..=1000).find(|i| !busy.contains(i)).unwrap_or(1000)
+}
+
+#[cfg(test)]
+mod apps_tests {
+    use super::*;
+
+    fn w(id: i64, windows: u32) -> zenvy_proto::Workspace {
+        zenvy_proto::Workspace {
+            id,
+            name: id.to_string(),
+            monitor: "M".into(),
+            windows,
+        }
+    }
+
+    #[test]
+    fn the_new_workspace_is_the_lowest_one_without_windows() {
+        assert_eq!(lowest_empty_workspace(&[]), 1);
+        assert_eq!(lowest_empty_workspace(&[w(1, 2), w(2, 1), w(3, 4)]), 4);
+        assert_eq!(
+            lowest_empty_workspace(&[w(1, 2), w(2, 0), w(3, 4)]),
+            2,
+            "an existing empty workspace is reused"
+        );
+        assert_eq!(lowest_empty_workspace(&[w(1, 1), w(3, 1)]), 2, "gaps are filled");
+        assert_eq!(
+            lowest_empty_workspace(&[w(-98, 3), w(1, 0)]),
+            1,
+            "scratchpads never count"
+        );
     }
 }

@@ -19,6 +19,7 @@ zenvy-audio.workspace = true
 zenvy-stream.workspace = true
 zenvy-power.workspace = true
 zenvy-screen.workspace = true
+zenvy-apps.workspace = true
 zenvy-brightness.workspace = true
 zenvy-media.workspace = true
 serde.workspace = true

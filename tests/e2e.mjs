@@ -587,6 +587,48 @@ else {
     ca.ws.close(); }
 
 
+  console.log('-- app launcher (fake desktop entries: the commands only write marker files)');
+  { const FD = process.env.ZENVY_FAKE_DIR, okMark = `${FD}/app-ok`, termMark = `${FD}/app-term`, hidMark = `${FD}/app-hidden`;
+    for (const f of [okMark, termMark, hidMark]) { try { fsx.unlinkSync(f); } catch {} }
+    const cl = await wsConnect(phone, dev); const snapL = await cl.until(m => m.t === 'snapshot');
+    const ask = async (id, data) => { cl.send({ t: 'apps', id, data }); return cl.until(m => m.id === id); };
+    const au = () => (process.env.ZENVY_AUDIT && fsx.existsSync(process.env.ZENVY_AUDIT)) ? fsx.readFileSync(process.env.ZENVY_AUDIT, 'utf8') : '';
+    ok(snapL.data.apps?.enabled === true, 'the phone is told the app launcher is available');
+    const no = await ask('l0', { cmd: 'list' });
+    ok(no?.t === 'err' && no.data.code === 'forbidden' && no.data.message.includes(`zenvyd grant ${dev} launch`), 'without the launch permission nothing is listed and the grant command is shown');
+    ok((await ask('l0b', { cmd: 'launch', id: 'zenvy-app-ok' }))?.data.code === 'forbidden' && !fsx.existsSync(okMark), 'and nothing starts');
+    await admin({ op: 'grant', id: dev, scope: 'launch' }); await sleep(300);
+    const list = await ask('l1', { cmd: 'list' });
+    const names = (list?.data?.apps || []).map(a => a.name);
+    ok(list?.t === 'apps' && names.includes('Zenvy Test App'), 'the installed apps are listed by name and id');
+    ok(!names.includes('Zenvy Test Terminal') && !names.includes('Zenvy Test Hidden'), 'terminal-only and hidden entries are not offered');
+    ok(!JSON.stringify(list.data).includes('touch') && !JSON.stringify(list.data).includes(FD) && !JSON.stringify(list.data).includes('Exec'), 'the command lines never reach the phone');
+    ok((await ask('l2', { cmd: 'launch', id: 'zenvy-app-ok' }))?.data.state === 'launched', 'launching on this workspace starts the app');
+    for (let i = 0; i < 40 && !fsx.existsSync(okMark); i++) await sleep(100);
+    ok(fsx.existsSync(okMark), 'the program really ran (the field code was dropped)');
+    const cur = snapL.data.desktop.monitors[0].active_workspace;
+    fsx.unlinkSync(okMark);
+    const onWs = await ask('l3', { cmd: 'launch', id: 'zenvy-app-ok', workspace: cur });
+    ok(onWs?.data.state === 'launched' && onWs.data.workspace === cur, 'launching on a numbered workspace switches to it first (the current one here, so nothing moves)');
+    for (let i = 0; i < 40 && !fsx.existsSync(okMark); i++) await sleep(100);
+    ok(fsx.existsSync(okMark), 'and starts it');
+    ok((await ask('l4', { cmd: 'launch', id: 'zenvy-app-term' }))?.data.code === 'unknown_app' && !fsx.existsSync(termMark), 'a terminal-only entry cannot be launched');
+    ok((await ask('l5', { cmd: 'launch', id: 'zenvy-app-hidden' }))?.data.code === 'unknown_app' && !fsx.existsSync(hidMark), 'a hidden entry cannot be launched');
+    const bad = await ask('l6', { cmd: 'launch', id: 'zenvy-app-bad' });
+    ok(bad?.t === 'err' && bad.data.code === 'failed' && !bad.data.message.includes('/nonexistent'), 'a program that cannot start is reported without its path');
+    ok((await ask('l7', { cmd: 'launch', id: 'does-not-exist' }))?.data.code === 'unknown_app', 'an unknown id is refused');
+    // invalid input goes on a throwaway connection: it counts toward the 5-strikes limit
+    const cx = await wsConnect(phone, dev); await cx.until(m => m.t === 'snapshot');
+    const askx = async (id, data) => { cx.send({ t: 'apps', id, data }); return cx.until(m => m.id === id); };
+    for (const [id, data, why] of [['x1', { cmd: 'launch', id: '../../bin/sh' }, 'a path as the id'], ['x3', { cmd: 'launch', id: 'zenvy-app-ok', workspace: 'bogus' }, 'an unknown workspace word'], ['x4', { cmd: 'launch', id: 'zenvy-app-ok', workspace: 0 }, 'workspace zero'], ['x5', { cmd: 'launch', id: 'zenvy-app-ok', workspace: -98 }, 'a scratchpad'], ['x6', { cmd: 'exec', argv: ['id'] }, 'a command']]) {
+      const r = await askx(id, data); ok(r?.t === 'err' && r.data.code === 'invalid_command', `rejected: ${why}`);
+      if (cx.closedCode() !== null) break;
+    }
+    ok(!fsx.existsSync(termMark) && !fsx.existsSync(hidMark), 'none of the invalid requests started anything');
+    ok(au().includes('"app_launch"') && au().includes('zenvy-app-ok (touch)') && !au().includes(FD), 'launches are audit-logged by app id and program name');
+    cx.ws.close(); cl.ws.close(); }
+
+
   console.log('-- clipboard and links (fake wl-copy/wl-paste/xdg-open: the real clipboard is never touched)');
   { const FD = process.env.ZENVY_FAKE_DIR, clip = `${FD}/clip`, opened = `${FD}/opened.log`;
     for (const f of [clip, opened, `${FD}/clip-types`]) { try { fsx.unlinkSync(f); } catch {} }
@@ -746,7 +788,7 @@ else {
     const cl = await wsConnect(phone, dev); const snapL = await cl.until(m => m.t === 'snapshot');
     ok(snapL.data.power.lock === 'locked' && snapL.data.desktop.windows.length === 0 && snapL.data.desktop.workspaces.length === 0 && snapL.data.browser.browsers.length === 0, 'a phone that connects while the PC is locked is sent no windows, workspaces or tabs');
     const asked = async (type, id, data) => { cl.send({ t: type, id, data }); return cl.until(m => m.id === id); };
-    for (const [type, id, data, why] of [['cmd', 'lk1', { cmd: 'switch_workspace', id: 1 }, 'switching workspaces'], ['input', 'lk2', { cmd: 'pointer_move', dx: 0, dy: 0 }, 'the pointer'], ['browser', 'lk3', { cmd: 'close_tab', browser: 1, tab: 1 }, 'closing browser tabs'], ['favicon', 'lk7', { host: 'docs.rs' }, 'site icons'], ['action', 'lk8', { cmd: 'run', id: 'mark' }, 'custom actions'], ['clipboard', 'lk9', { cmd: 'get' }, 'the clipboard'], ['file', 'lk10', { cmd: 'offer', name: 'a.txt', size: 5 }, 'file transfer'], ['screen', 'lk11', { cmd: 'start' }, 'the screen preview']]) {
+    for (const [type, id, data, why] of [['cmd', 'lk1', { cmd: 'switch_workspace', id: 1 }, 'switching workspaces'], ['input', 'lk2', { cmd: 'pointer_move', dx: 0, dy: 0 }, 'the pointer'], ['browser', 'lk3', { cmd: 'close_tab', browser: 1, tab: 1 }, 'closing browser tabs'], ['apps', 'lk8', { cmd: 'list' }, 'listing apps'], ['favicon', 'lk7', { host: 'docs.rs' }, 'site icons'], ['action', 'lk8', { cmd: 'run', id: 'mark' }, 'custom actions'], ['clipboard', 'lk9', { cmd: 'get' }, 'the clipboard'], ['file', 'lk10', { cmd: 'offer', name: 'a.txt', size: 5 }, 'file transfer'], ['screen', 'lk11', { cmd: 'start' }, 'the screen preview']]) {
       const r = await asked(type, id, data); ok(r?.t === 'err' && r.data.code === 'pc_locked', `refused while locked: ${why}`);
     }
     ok((await asked('audio', 'lk4', { cmd: 'set_volume', percent: 33 }))?.t === 'ack', 'volume still works while locked');

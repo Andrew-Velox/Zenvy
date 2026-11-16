@@ -65,6 +65,12 @@ printf 'not an image, a secret' > "$TMP/fake/notimage.png"
 printf '[Desktop Entry]\nName=Evil2\nIcon=%s\n' "$TMP/fake/notimage.png" > "$TMP/data/applications/zenvy-evil2.desktop"
 printf '[Desktop Entry]\nName=Evil3\nIcon=../../../../../../etc/passwd\n' > "$TMP/data/applications/zenvy-evil3.desktop"
 
+# launcher entries: the commands only write marker files in the sandbox (nothing real is started)
+printf '[Desktop Entry]\nType=Application\nName=Zenvy Test App\nExec=touch "%s/fake/app-ok" %%U\n' "$TMP" > "$TMP/data/applications/zenvy-app-ok.desktop"
+printf '[Desktop Entry]\nType=Application\nName=Zenvy Test Terminal\nTerminal=true\nExec=touch "%s/fake/app-term"\n' "$TMP" > "$TMP/data/applications/zenvy-app-term.desktop"
+printf '[Desktop Entry]\nType=Application\nName=Zenvy Test Hidden\nNoDisplay=true\nExec=touch "%s/fake/app-hidden"\n' "$TMP" > "$TMP/data/applications/zenvy-app-hidden.desktop"
+printf '[Desktop Entry]\nType=Application\nName=Zenvy Test Broken\nExec=/nonexistent/zenvy-program\n' > "$TMP/data/applications/zenvy-app-bad.desktop"
+
 # private session bus (agent + fake player only)
 dbus-daemon --session --nofork --print-address=3 3>"$TMP/dbus.addr" >/dev/null 2>&1 &
 PIDS+=($!)

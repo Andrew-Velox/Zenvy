@@ -345,6 +345,7 @@ pub const KNOWN_SCOPES: &[&str] = &[
     "unlock",
     "screen",
     "exec",
+    "launch",
 ];
 
 pub fn valid_scope(s: &str) -> bool {

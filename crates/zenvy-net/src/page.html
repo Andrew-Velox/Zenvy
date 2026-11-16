@@ -367,6 +367,11 @@ body.locked #top,body.locked #nav{display:none}
 .wsb b{font-size:18px;line-height:20px;font-weight:600;font-variant-numeric:tabular-nums}
 .wd{display:flex;gap:3px;height:5px}.wd i{width:5px;height:5px;border-radius:50%;background:var(--primary-ink)}
 .wsb.empty{opacity:.5}
+.wsb.add{background:transparent;box-shadow:inset 0 0 0 1.5px var(--glass-line);color:var(--on-surface-v);justify-content:center}
+.ap-s{height:48px;margin:12px 0 8px}
+.ap-list{max-height:min(44vh,400px);overflow-y:auto;margin:0 -8px}
+.ap-list .srow{height:56px}
+.ap-empty{padding:24px 8px;text-align:center;font-size:14px;line-height:20px;color:var(--on-surface-v)}
 .wsb.on{background:var(--sel);color:#fff;box-shadow:var(--rim),0 4px 14px rgba(0,0,0,.18)}.wsb.on .wd i{background:#fff}.wsb.on.empty{opacity:1}
 .fav.ico{background:var(--fill-2)}.fav img{width:20px;height:20px;border-radius:4px;object-fit:contain;display:block;pointer-events:none}
 
@@ -648,7 +653,7 @@ async function connect(){
       const sig=await crypto.subtle.sign('Ed25519',dev.key,msg);
       ws.send(JSON.stringify({v:1,t:'auth',data:{device_id:dev.id,sig:b64u(sig)}}));
     }else if(m.t==='ready'){backoff=500;live('on','…');startPing()}
-    else if(m.t==='snapshot'){caps=m.data.capabilities;manifest=m.data.ui_manifest;state=m.data.desktop;browser=m.data.browser||{browsers:[]};audio=m.data.audio||null;media=m.data.media||null;bright=m.data.brightness||null;power=m.data.power||null;actions=m.data.actions||[];share=m.data.share||{clipboard:false,open_link:false};files=m.data.files||{enabled:false,offers:[]};scr=m.data.screen||{enabled:false};if(!scr.enabled&&scrOn)stopScreen(true);buildNav();mediaAt=Date.now();buildNav();renderPower();if(view==='gate')setTab(tab);else renderWs();renderDesk()}
+    else if(m.t==='snapshot'){caps=m.data.capabilities;manifest=m.data.ui_manifest;state=m.data.desktop;browser=m.data.browser||{browsers:[]};audio=m.data.audio||null;media=m.data.media||null;bright=m.data.brightness||null;power=m.data.power||null;actions=m.data.actions||[];share=m.data.share||{clipboard:false,open_link:false};files=m.data.files||{enabled:false,offers:[]};scr=m.data.screen||{enabled:false};appsCfg=m.data.apps||{enabled:false};if(!scr.enabled&&scrOn)stopScreen(true);buildNav();mediaAt=Date.now();buildNav();renderPower();if(view==='gate')setTab(tab);else renderWs();renderDesk()}
     else if(m.t==='evt'&&m.data.topic==='desktop.state'){state=m.data.value;renderWs();renderDesk()}
     else if(m.t==='icon'){onIcon(m.data)}
     else if(m.t==='screen'){if(m.data&&m.data.state==='stopped'){stopScreen(true,m.data.reason||'')}}
@@ -714,7 +719,7 @@ function onIcon(d){
   if(!d||typeof d.class!=='string')return;const k=d.class.toLowerCase();
   appIcons[k]=(d.b64&&(d.mime==='image/png'||d.mime==='image/svg+xml')&&/^[A-Za-z0-9+\/=]+$/.test(d.b64))?'data:'+d.mime+';base64,'+d.b64:0;
   clearTimeout(iconSaveT);iconSaveT=setTimeout(()=>{try{const o={};let n=0;for(const k2 in appIcons)if(typeof appIcons[k2]==='string'&&n++<60)o[k2]=appIcons[k2];localStorage.setItem(ICON_KEY,JSON.stringify(o))}catch(e){}},500);
-  clearTimeout(iconRenderT);iconRenderT=setTimeout(()=>{if(view==='desk')renderDesk()},80);
+  clearTimeout(iconRenderT);iconRenderT=setTimeout(()=>{if(view==='desk')renderDesk();if(pwrView==='apps')renderAppList()},80);
 }
 const avatarFor=(cls,label)=>{const u=iconFor(cls);return u?'<span class="avatar ico"><img src="'+u+'" alt="" draggable="false"></span>':'<span class="avatar">'+esc((label||'?').charAt(0))+'</span>'};
 const sendListen=(data,id)=>ws&&ws.readyState===1&&ws.send(JSON.stringify({v:1,t:'listen',...(id?{id}:{}),data}));
@@ -734,7 +739,8 @@ function renderWs(){
   bar.hidden=false;
   bar.innerHTML=state.workspaces.filter(w=>w.id>0).sort((a,b)=>a.id-b.id).map(w=>{
     const on=w.id===act,n=w.windows;
-    return '<button class="wsb'+(on?' on':'')+(n?'':' empty')+'" data-ws="'+w.id+'" aria-pressed="'+on+'" aria-label="Workspace '+w.id+(n?', '+n+(n===1?' window':' windows'):', empty')+'"><b>'+w.id+'</b><span class="wd">'+'<i></i>'.repeat(Math.min(n,4))+'</span></button>'}).join('');
+    return '<button class="wsb'+(on?' on':'')+(n?'':' empty')+'" data-ws="'+w.id+'" aria-pressed="'+on+'" aria-label="Workspace '+w.id+(n?', '+n+(n===1?' window':' windows'):', empty')+'"><b>'+w.id+'</b><span class="wd">'+'<i></i>'.repeat(Math.min(n,4))+'</span></button>'}).join('')+(appsCfg.enabled?'<button class="wsb add" id="ws-add" aria-label="Open an app on a new workspace" title="Open an app on a new workspace">'+ic('plus')+'</button>':'');
+  const add=$('ws-add');if(add)add.onclick=()=>{buzz();openApps('empty')};
   bar.querySelectorAll('[data-ws]').forEach(b=>b.onclick=()=>{buzz();send('ws'+b.dataset.ws,{cmd:'switch_workspace',id:+b.dataset.ws})});
   const on=bar.querySelector('.wsb.on');if(on&&!renderWs.done){on.scrollIntoView({inline:'center',block:'nearest'});renderWs.done=1}
 }
@@ -964,7 +970,7 @@ function rpc(type,data,cb){
 }
 const PWR={lock:{icon:'lock',label:'Lock',can:'can_lock'},suspend:{icon:'moon',label:'Sleep',can:'can_suspend',q:'Put the PC to sleep?',w:'Sleep'},reboot:{icon:'restart',label:'Restart',can:'can_reboot',q:'Restart the PC?',w:'Restart'},poweroff:{icon:'power',label:'Shut down',can:'can_poweroff',q:'Shut down the PC?',w:'Shut down'}};
 const powerOn=()=>!!(power&&manifest&&manifest.some(m=>m.id==='power'&&m.enabled));
-const errHtml=t=>esc(t).replace(/zenvyd grant ([A-Za-z0-9_-]+) (power|unlock)/,'<code>zenvyd grant $1 $2</code>');
+const errHtml=t=>esc(t).replace(/zenvyd grant ([A-Za-z0-9_-]+) (power|unlock|launch|windows)/,'<code>zenvyd grant $1 $2</code>');
 const isLocked=()=>powerOn()&&power.lock==='locked'&&view!=='gate';
 let lockApplied=false,lockPrevTab=null,lockBusy=false,lockErr='';
 function renderPower(){
@@ -1045,6 +1051,36 @@ function doUnlockDock(){
 }
 $('lk-go').onclick=()=>{buzz();doUnlockDock()};
 $('lk-pw').onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();doUnlockDock()}};
+/* ---------- app launcher: open an installed app here or on a new, empty workspace ---------- */
+let appsCfg={enabled:false},appList=null,appQ='',appWs='empty',appErr='';
+const newWorkspaceId=()=>{const busy=new Set(((state&&state.workspaces)||[]).filter(w=>w.windows>0).map(w=>w.id));let i=1;while(busy.has(i))i++;return i};
+const filteredApps=()=>{const q=appQ.trim().toLowerCase();return(appList||[]).filter(a=>!q||a.name.toLowerCase().includes(q))};
+function renderAppSub(){const e=$('ap-sub');if(e)e.textContent=appWs==='empty'?'Switches to workspace '+newWorkspaceId()+', then opens it there':'Opens on the workspace you are on'}
+function renderAppList(){
+  const el=$('ap-list');if(!el||pwrView!=='apps')return;
+  $('ap-err').innerHTML=appErr?errHtml(appErr):'';
+  if(appList===null){el.innerHTML='<div class="ap-empty">'+(appErr?'':'Loading…')+'</div>';return}
+  const all=filteredApps(),shown=all.slice(0,30);
+  el.innerHTML=shown.map(a=>'<button class="srow" data-app="'+esc(a.id)+'">'+avatarFor(a.id,a.name)+'<span class="li-txt"><b>'+esc(a.name)+'</b></span></button>').join('')+
+    (all.length>shown.length?'<div class="ap-empty">Type to narrow down '+(all.length-shown.length)+' more</div>':'')+(!all.length?'<div class="ap-empty">No app matches</div>':'');
+  el.querySelectorAll('[data-app]').forEach(b=>b.onclick=()=>{buzz();launchApp(b.dataset.app)});
+}
+function launchApp(id){
+  const a=(appList||[]).find(x=>x.id===id);if(!a)return;
+  appErr='';
+  rpc('apps',{cmd:'launch',id,workspace:appWs},r=>{
+    if(r.t==='apps'&&r.data&&r.data.state==='launched'){closeSheet(true);snack('Opening '+a.name+(r.data.workspace?' on workspace '+r.data.workspace:''))}
+    else{appErr=(r.data&&r.data.message)||'It did not open';renderAppList()}
+  });
+}
+function openApps(where){
+  appWs=where||'empty';appQ='';appErr='';appList=null;openSheet('apps');
+  rpc('apps',{cmd:'list'},r=>{
+    if(r.t==='apps'&&r.data&&Array.isArray(r.data.apps)){appList=r.data.apps.filter(a=>a&&typeof a.id==='string'&&typeof a.name==='string')}
+    else{appErr=(r.data&&r.data.message)||'Could not load the apps';appList=[]}
+    renderAppList();
+  });
+}
 function openSheet(v){pwrView=v;pwrErr='';pwrBusy=false;$('scrim').hidden=false;$('sheet').hidden=false;renderSheet();if(v==='unlock')setTimeout(()=>{const p=$('pw');if(p)p.focus()},120)}
 function closeSheet(force){if(pwrView==='count'&&!force)return;pwrView=null;clearInterval(pwrTimer);$('scrim').hidden=true;$('sheet').hidden=true;$('sheet-body').innerHTML=''}
 function startPwrTimer(){clearInterval(pwrTimer);pwrTimer=setInterval(tickPwr,250);tickPwr()}
@@ -1111,6 +1147,12 @@ function renderSheet(){
     h='<div class="sbig">'+ic('upload')+'</div><h3 class="stitle">Send to this PC</h3><div class="ssub shsnip">'+esc(shareText.slice(0,160))+(shareText.length>160?'\u2026':'')+'</div>'+
       '<button class="sprimary" id="sh-clip">'+ic('copy','s')+'Copy to PC clipboard</button>'+
       (link&&share.open_link?'<button class="sprimary neutral" id="sh-open">'+ic('globe','s')+'Open on PC</button>':'')+'<button class="sbtn2" id="scancel">Cancel</button>';
+  }else if(pwrView==='apps'){
+    const nw=newWorkspaceId();
+    h='<h3 class="stitle">Open an app</h3><div class="ssub" id="ap-sub"></div>'+
+      '<div class="segb" id="ap-tg" role="group" aria-label="Where to open it"><button data-w="empty" class="'+(appWs==='empty'?'on':'')+'">New workspace '+nw+'</button><button data-w="here" class="'+(appWs==='here'?'on':'')+'">This workspace</button></div>'+
+      '<div class="pass ap-s"><input id="ap-q" type="search" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="search" placeholder="Search apps" aria-label="Search apps" value="'+esc(appQ)+'"></div>'+
+      '<div class="serr" id="ap-err"></div><div class="ap-list" id="ap-list"></div><button class="sbtn2" id="scancel">Close</button>';
   }else if(pwrView==='unlock'){
     h='<div class="sbig">'+ic('lock')+'</div><h3 class="stitle">PC locked</h3><div class="ssub">Type the password for this PC</div>'+
       '<div class="pass">'+ic('lock','s')+'<input id="pw" type="password" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="go" name="zv'+Math.random().toString(36).slice(2,8)+'" placeholder="Password"'+(pwrBusy?' disabled':'')+'></div>'+err+
@@ -1124,6 +1166,12 @@ function renderSheet(){
   const ub=$('unl');if(ub)ub.onclick=()=>{buzz();doUnlock()};
   const sc2=$('sh-clip');if(sc2)sc2.onclick=()=>{buzz();const t=shareText.trim().slice(0,12000);closeSheet();rpc('clipboard',{cmd:'set',text:t},r=>{if(r.t==='ack'){clipSnip=t.slice(0,120);snack('Sent to the PC clipboard')}else snack(clipMsg(r))})};
   const so=$('sh-open');if(so)so.onclick=()=>{buzz();const u=asLink(shareText);closeSheet();if(u)openOnPc(u)};
+  if(pwrView==='apps'){
+    el.querySelectorAll('[data-w]').forEach(b=>b.onclick=()=>{buzz();appWs=b.dataset.w;el.querySelectorAll('[data-w]').forEach(x=>x.classList.toggle('on',x===b));renderAppSub()});
+    const q=$('ap-q');q.oninput=()=>{appQ=q.value;renderAppList()};
+    q.onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();const f=filteredApps()[0];if(f)launchApp(f.id);q.blur()}};
+    renderAppSub();renderAppList();
+  }
   const pw=$('pw');if(pw)pw.onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();doUnlock()}};
   if(pwrView==='count')tickPwr();
 }

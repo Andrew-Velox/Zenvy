@@ -40,7 +40,7 @@ Run `zenvyd browser setup` and follow the steps to load `browser-extension/` in 
 
 | Screen | What it does | Permission |
 | --- | --- | --- |
-| Desk | workspaces, windows (focus, close, move, float), browser tabs, custom actions | `view`, `windows`, `exec` |
+| Desk | workspaces, windows (focus, close, move, float), browser tabs, custom actions, **open an installed app here or on a new empty workspace** (the `+` chip) | `view`, `windows`, `exec`, `launch` |
 | Touchpad | pointer, scroll, clicks, drag, typing | `input` |
 | Keyboard | keys, shortcuts, live typing, clipboard to and from the PC, send and receive files, links | `input`, `clipboard`, `files` |
 | Media | player controls, volume, brightness, **phone speaker** (the PC's sound played on the phone) | `system`, `listen` |
@@ -51,7 +51,7 @@ A newly paired phone only gets `view`, `input`, `windows` and `system`. Everythi
 
 ```bash
 zenvyd devices                     # ids of the paired phones
-zenvyd grant <id> screen           # also: listen clipboard files exec power unlock
+zenvyd grant <id> screen           # also: listen clipboard files exec launch power unlock
 zenvyd revoke <id>                 # remove a phone entirely
 zenvyd send ~/report.pdf           # offer a file to the connected phones
 ```

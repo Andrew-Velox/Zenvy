@@ -2184,6 +2184,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "zenvy-apps"
+version = "0.0.1"
+dependencies = [
+ "tempfile",
+]
+
+[[package]]
 name = "zenvy-audio"
 version = "0.0.1"
 dependencies = [
@@ -2307,6 +2314,7 @@ dependencies = [
  "tokio",
  "tokio-util",
  "tracing",
+ "zenvy-apps",
  "zenvy-audio",
  "zenvy-auth",
  "zenvy-brightness",
@@ -2388,6 +2396,7 @@ dependencies = [
  "tokio",
  "tracing",
  "tracing-subscriber",
+ "zenvy-apps",
  "zenvy-audio",
  "zenvy-auth",
  "zenvy-brightness",

@@ -46,6 +46,8 @@ pub struct NetConfig {
     pub files: Option<Arc<crate::files::Transfers>>,
     /// `None` when `grim` or screen capture is missing: no screen preview.
     pub screen: Option<zenvy_screen::ScreenStreamer>,
+    /// Installed applications the phone may launch (needs the `launch` scope).
+    pub apps: Option<Arc<zenvy_apps::Apps>>,
 }
 
 pub struct App {

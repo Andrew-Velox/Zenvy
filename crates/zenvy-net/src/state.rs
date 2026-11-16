@@ -87,6 +87,7 @@ pub async fn snapshot(app: &App) -> Value {
             None => json!({ "enabled": false }),
         },
         "screen": { "enabled": app.cfg.screen.is_some() },
+        "apps": { "enabled": app.cfg.apps.is_some() },
         "share": { "clipboard": app.cfg.clipboard.is_some(), "open_link": app.cfg.clipboard.as_ref().is_some_and(|c| c.open.is_some()) },
     })
 }

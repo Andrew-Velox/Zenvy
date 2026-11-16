@@ -778,6 +778,7 @@ async fn serve_cmd() -> Result<(), Box<dyn std::error::Error>> {
         clipboard: build_clipboard(&sc),
         files: build_files(&cfg),
         screen: build_screen(&sc),
+        apps: Some(std::sync::Arc::new(zenvy_apps::Apps::from_env())),
         actions: cfg
             .actions
             .iter()
