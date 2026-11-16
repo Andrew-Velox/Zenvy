@@ -1,11 +1,33 @@
+# Updates arrive monthly and grouped, so they never pile up. Major versions of Rust and Android dependencies change APIs
+# (and, for the crypto and TLS crates, behaviour that matters for security), so they are migrated by hand with the full
+# test suite instead of arriving as automatic pull requests; minor and patch updates still do.
 version: 2
 updates:
   - package-ecosystem: cargo
     directory: /
-    schedule: { interval: weekly }
+    schedule: { interval: monthly }
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
+    groups:
+      rust-minor-and-patch:
+        patterns: ["*"]
   - package-ecosystem: gradle
     directory: /android
-    schedule: { interval: weekly }
+    schedule: { interval: monthly }
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
+    groups:
+      android-minor-and-patch:
+        patterns: ["*"]
   - package-ecosystem: github-actions
     directory: /
-    schedule: { interval: weekly }
+    schedule: { interval: monthly }
+    # the release workflow only runs on a tag, so its tooling is updated by hand together with a test release
+    ignore:
+      - dependency-name: "softprops/action-gh-release"
+      - dependency-name: "actions/attest-build-provenance"
+    groups:
+      actions:
+        patterns: ["*"]
