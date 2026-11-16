@@ -409,6 +409,21 @@ body.locked #top,body.locked #nav{display:none}
 @keyframes scrip{from{transform:scale(.4);opacity:.9}to{transform:scale(1.2);opacity:0}}
 @media (prefers-reduced-motion:reduce){.sc-rip{animation-duration:.01s}}
 #nav .pill{width:min(64px,100%)}
+
+/* ---------- accessibility ---------- */
+:focus{outline:none}
+:focus-visible{outline:2px solid var(--primary);outline-offset:2px;border-radius:8px}
+button:focus-visible,.sw:focus-visible{outline-offset:-2px}
+.tabsbtn{height:40px;border-radius:12px}.pbtn.m{flex:none;width:56px}
+.chip,.segb.sm{min-height:40px}.chip{height:40px}.segb.sm{height:40px;border-radius:20px}
+.sc-go{height:40px;border-radius:20px}
+/* solid surfaces: the "Reduce transparency" switch, or the phone's reduce-transparency / increased-contrast settings */
+[data-solid="1"] #backdrop{display:none}
+[data-solid="1"] *,[data-solid="1"] *::before,[data-solid="1"] *::after{-webkit-backdrop-filter:none!important;backdrop-filter:none!important}
+[data-solid="1"] :is(#top,#nav,.fab,.typing,#snack,#sheet,.lk-pass,.lk-sys,.kpanel,.card,.mcard,.bigempty,#padwrap,.sc-stat){background:var(--surface-high)}
+[data-solid="1"] #top{background:var(--surface)}
+[data-solid="1"] :is(.card,.mcard,.bigempty,#nav,.kpanel){box-shadow:inset 0 0 0 1px var(--outline-v)}
+[data-solid="1"]{--fill-1:var(--surface-c);--fill-2:var(--surface-high);--fill-3:var(--surface-highest);--glass-line:var(--outline-v)}
 </style></head><body>
 <div id="backdrop" aria-hidden="true"><svg width="100%" height="100%" viewBox="0 0 400 800" preserveAspectRatio="xMidYMid slice"><defs><filter id="bdblur" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="46"/></filter></defs><g filter="url(#bdblur)"><circle cx="330" cy="110" r="150" style="fill:var(--bd-a);opacity:var(--bd-ao)"/><circle cx="20" cy="360" r="130" style="fill:var(--bd-b);opacity:var(--bd-bo)"/><circle cx="360" cy="560" r="120" style="fill:var(--bd-c);opacity:var(--bd-co)"/><circle cx="90" cy="740" r="150" style="fill:var(--bd-a);opacity:var(--bd-ao)"/></g></svg></div>
 <svg width="0" height="0" style="position:absolute" aria-hidden="true"><symbol id="zlogo" viewBox="-300 -300 600 600"><path fill="currentColor" fill-rule="evenodd" d="M-33.3 -223.6 L-32.1 -224.1 L-8.1 -224.1 L204.9 -224.1 L213.9 -223.8 L221.9 -222.0 L229.9 -218.9 L236.9 -215.0 L244.7 -208.6 L250.4 -202.6 L255.2 -195.6 L259.3 -187.6 L262.5 -177.6 L263.4 -171.6 L263.5 -162.6 L262.4 -153.6 L261.4 -149.6 L259.4 -143.6 L256.2 -136.6 L252.4 -130.6 L247.9 -124.9 L157.9 -32.2 L52.9 77.5 L46.9 82.6 L38.9 88.0 L30.9 91.8 L22.9 93.9 L14.9 94.7 L-47.1 95.5 L-47.7 94.4 L160.4 -115.6 L162.2 -118.6 L163.1 -121.6 L163.2 -125.6 L162.1 -128.6 L159.9 -131.0 L156.9 -132.8 L152.9 -133.6 L-122.6 -127.6 L-122.9 -128.6 L-119.3 -132.6ZM16.2 -71.6 L54.9 -72.3 L55.9 -72.2 L56.3 -71.6 L-158.5 146.4 L-159.3 147.4 L-159.1 147.8 L89.9 148.0 L91.0 147.4 L90.4 146.4 L69.4 122.4 L69.9 121.2 L249.9 117.7 L251.0 118.4 L250.2 119.4 L206.2 167.4 L159.9 217.4 L153.9 221.5 L147.9 223.7 L144.9 224.1 L-203.1 224.1 L-209.1 223.7 L-215.1 222.6 L-225.1 219.6 L-234.1 214.7 L-242.6 208.4 L-249.4 201.4 L-252.4 197.4 L-257.6 188.4 L-261.4 178.4 L-262.5 173.4 L-263.5 164.4 L-263.4 159.4 L-262.4 152.4 L-260.3 144.4 L-256.3 135.4 L-252.5 129.4 L-249.1 125.0 L-87.9 -39.6 L-75.1 -50.9 L-66.1 -57.1 L-55.1 -63.0 L-47.1 -66.1 L-37.1 -69.0 L-24.1 -70.9Z"/><path style="fill:var(--logo-accent)" d="M-131.6 -222.6 L-66.1 -223.4 L-64.8 -222.6 L-143.9 -137.6 L-150.1 -131.5 L-155.1 -128.4 L-158.1 -127.3 L-161.1 -126.9 L-260.5 -124.6 L-260.3 -125.6 L-181.1 -210.9 L-173.1 -219.0 L-168.1 -221.7 L-165.1 -222.4Z"/></symbol></svg>
@@ -439,15 +454,16 @@ body.locked #top,body.locked #nav{display:none}
   <section class="view" id="v-lock" hidden><div class="lk"><div class="lk-clock" id="lk-clock"></div><div class="lk-pill" id="lk-pill"></div><div class="lk-cards" id="lk-cards"></div></div></section>
   <section class="view" id="v-settings" hidden></section>
 </main>
-<nav id="nav" hidden></nav>
+<nav id="nav" aria-label="Main" hidden></nav>
 <div id="lk-dock" hidden><div class="lk-err" id="lk-err"></div><div class="lk-row"><div class="lk-pass" id="lk-pass"><input id="lk-pw" type="password" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="go" placeholder="Password" aria-label="Password"><button class="lk-go" id="lk-go" aria-label="Unlock"></button></div><div class="lk-sys" id="lk-sys"></div></div></div>
 <div id="scrim" hidden></div><div id="sheet" role="dialog" aria-modal="true" hidden><div class="grab"></div><div id="sheet-body"></div></div>
-<div id="snack" hidden></div>
+<div id="snack" role="status" aria-live="polite" hidden></div>
 <script>
 'use strict';
 const $=id=>document.getElementById(id);
 const ICONS={
   screen:'<path d="M2 8V6a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-6"/><path d="M2 12a9 9 0 0 1 8 8M2 16a5 5 0 0 1 4 4M2 20h.01"/>',
+  contrast:'<circle cx="12" cy="12" r="9"/><path d="M12 3v18M12 8h4M12 12h5M12 16h4"/>',
   desk:'<rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/>',
   pad:'<rect x="3" y="5" width="18" height="14" rx="3"/><path d="M3 15h18M12 15v4"/>',
   keys:'<rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M7 14h10"/>',
@@ -505,14 +521,18 @@ const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'
 const ls={get:k=>{try{return localStorage.getItem(k)}catch(e){return null}},set:(k,v)=>{try{localStorage.setItem(k,v)}catch(e){}}};
 
 /* ---------- preferences (kept on this phone only) ---------- */
-const DEFAULTS={sq:'medium',theme:'system',live:true,mutePc:false,lvol:1,ltarget:0.08,haptics:true,natural:true,tap:true,accel:true,speed:1.6,tabs:true,backdrop:true,scope:'here',lastTab:'pad'};
+const DEFAULTS={solid:false,sq:'medium',theme:'system',live:true,mutePc:false,lvol:1,ltarget:0.08,haptics:true,natural:true,tap:true,accel:true,speed:1.6,tabs:true,backdrop:true,scope:'here',lastTab:'pad'};
 const prefs=(()=>{try{return Object.assign({},DEFAULTS,JSON.parse(ls.get('zenvy.prefs')||'{}'))}catch(e){return Object.assign({},DEFAULTS)}})();
 const savePrefs=()=>ls.set('zenvy.prefs',JSON.stringify(prefs));
 const buzz=()=>{if(prefs.haptics){try{navigator.vibrate&&navigator.vibrate(6)}catch(e){}}};
 let themeForce=null;
 const sysDark=()=>{try{if(window.ZenvyApp&&ZenvyApp.isDark)return !!ZenvyApp.isDark()}catch(e){}return matchMedia('(prefers-color-scheme: dark)').matches};
 function applyBackdrop(){document.documentElement.dataset.bd=prefs.backdrop===false?'off':'on'}
-function applyTheme(){applyBackdrop();
+/* solid surfaces: no blur and no see-through panels, for people who find them hard to read (the phone's own settings count too) */
+const mq=q=>{try{return matchMedia(q).matches}catch(e){return false}};
+function applySolid(){document.documentElement.dataset.solid=(prefs.solid||mq('(prefers-reduced-transparency: reduce)')||mq('(prefers-contrast: more)'))?'1':'0'}
+['(prefers-reduced-transparency: reduce)','(prefers-contrast: more)'].forEach(q=>{try{matchMedia(q).addEventListener('change',applySolid)}catch(e){}})
+function applyTheme(){applyBackdrop();applySolid();
   const dark=themeForce?themeForce==='dark':prefs.theme==='dark'||(prefs.theme==='system'&&sysDark());
   document.documentElement.dataset.theme=dark?'dark':'light';
   const cs=getComputedStyle(document.documentElement),bg=cs.getPropertyValue('--surface').trim(),nav=bg;
@@ -575,10 +595,10 @@ function buildNav(){
   if(buildNav.sig!==sig||!$('nav').firstChild){buildNav.sig=sig;
     $('nav').innerHTML=items.map(t=>'<button data-tab="'+t[0]+'" aria-label="'+t[1]+'"><span class="pill">'+ic(t[0])+'</span><span>'+t[1]+'</span></button>').join('');
     $('nav').querySelectorAll('button').forEach(b=>b.onclick=()=>{buzz();setTab(b.dataset.tab)})}
-  $('nav').querySelectorAll('button').forEach(b=>b.classList.toggle('on',b.dataset.tab===tab));
+  $('nav').querySelectorAll('button').forEach(b=>{const on=b.dataset.tab===tab;b.classList.toggle('on',on);on?b.setAttribute('aria-current','page'):b.removeAttribute('aria-current')});
   if(!items.some(t=>t[0]===tab))tab='desk';
 }
-function setTab(t){if(isLocked()){showView('lock');renderLockScreen();return}if(tab==='screen'&&t!=='screen')stopScreen(true);tab=t;$('nav').querySelectorAll('button').forEach(b=>b.classList.toggle('on',b.dataset.tab===t));prefs.lastTab=t;clearTimeout(setTab.st);setTab.st=setTimeout(savePrefs,400);showView(t);if(t==='media'){renderMedia();renderListen();renderAudio();renderBright();sendBright({cmd:'refresh'})}if(t==='keys')renderClip();if(t==='screen')renderScreen();renderWs()}
+function setTab(t){if(isLocked()){showView('lock');renderLockScreen();return}if(tab==='screen'&&t!=='screen')stopScreen(true);tab=t;$('nav').querySelectorAll('button').forEach(b=>{const on=b.dataset.tab===t;b.classList.toggle('on',on);on?b.setAttribute('aria-current','page'):b.removeAttribute('aria-current')});prefs.lastTab=t;clearTimeout(setTab.st);setTab.st=setTimeout(savePrefs,400);showView(t);if(t==='media'){renderMedia();renderListen();renderAudio();renderBright();sendBright({cmd:'refresh'})}if(t==='keys')renderClip();if(t==='screen')renderScreen();renderWs()}
 $('gear').innerHTML=ic('tune');$('back').innerHTML=ic('back');
 $('gear').onclick=()=>{buzz();renderSettings();showView('settings')};
 $('back').onclick=()=>{buzz();setTab(tab)};
@@ -1287,7 +1307,7 @@ function renderSettings(){
       sw('natural','wheel','Natural scroll',prefs.natural)+
       sw('tapc','tap','Tap to click',prefs.tap)+
       sw('hap','vibrate','Haptics',prefs.haptics)+'</div>'+
-    '<h2>More</h2><div class="card">'+sw('livet','keys','Live typing',prefs.live)+sw('tabsw','globe','Browser tabs',prefs.tabs)+sw('bdsw','layers','Glass backdrop',prefs.backdrop)+'</div>'+
+    '<h2>More</h2><div class="card">'+sw('livet','keys','Live typing',prefs.live)+sw('tabsw','globe','Browser tabs',prefs.tabs)+sw('bdsw','layers','Glass backdrop',prefs.backdrop)+sw('solidsw','contrast','Reduce transparency',prefs.solid)+'</div>'+
     '<h2>This PC</h2><div class="card">'+(entries.length?'<div class="capgrid">'+entries.map(([k,v])=>'<span class="cp" title="'+esc(k)+(v.backend?' \u00b7 '+esc(v.backend):'')+'"><i class="dot '+v.state+'"></i>'+esc(k.replace(/^[a-z]+\./,''))+'</span>').join('')+'</div>':'<div class="empty">'+ic('info')+'<span>Not connected</span></div>')+'</div>'+
     (window.ZenvyApp?'<button class="danger" id="forget">'+ic('unlink','s')+'Forget this PC</button>':'')+
     '<div class="about"><svg class="logo" aria-hidden="true"><use href="#zlogo"/></svg>Zenvy'+((window.ZenvyApp&&ZenvyApp.version)?' '+esc(ZenvyApp.version()):'')+(rtt!==null?' · '+rtt+' ms':'')+'</div>';
@@ -1296,7 +1316,7 @@ function renderSettings(){
   syncTheme();
   s.querySelectorAll('#theme button').forEach(b=>b.onclick=()=>{buzz();prefs.theme=b.dataset.v;savePrefs();syncTheme();applyTheme()});
   $('speed').oninput=e=>{prefs.speed=parseFloat(e.target.value);$('spv').textContent=prefs.speed.toFixed(1)+'×';savePrefs()};
-  for(const [id,key] of [['livet','live'],['accel','accel'],['natural','natural'],['tapc','tap'],['hap','haptics'],['tabsw','tabs'],['bdsw','backdrop']])$(id).onchange=e=>{prefs[key]=e.target.checked;savePrefs();if(key==='haptics'&&prefs.haptics)buzz();if(key==='tabs')renderDesk();if(key==='backdrop')applyBackdrop()};
+  for(const [id,key] of [['livet','live'],['accel','accel'],['natural','natural'],['tapc','tap'],['hap','haptics'],['tabsw','tabs'],['bdsw','backdrop'],['solidsw','solid']])$(id).onchange=e=>{prefs[key]=e.target.checked;savePrefs();if(key==='haptics'&&prefs.haptics)buzz();if(key==='tabs')renderDesk();if(key==='backdrop')applyBackdrop();if(key==='solid')applySolid()};
   const f=$('forget');if(f)f.onclick=()=>ZenvyApp.forget();
 }
 
