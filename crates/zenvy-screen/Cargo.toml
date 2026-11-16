@@ -1,6 +1,6 @@
 [package]
 name = "zenvy-screen"
-version = "0.0.1"
+version = "0.1.0"
 edition = "2021"
 license.workspace = true
 description = "Screen preview for the phone: grim JPEG frames only while somebody views, and tap-to-click mapping"

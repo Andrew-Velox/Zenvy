@@ -8,10 +8,10 @@ class PairLinkTest {
     private val secret = "E8Ia5BdikEabcdefghijkl"
 
     @Test fun parsesTheLinkTheAgentPrints() {
-        val l = PairLink.parse("https://192.168.0.230:7878/#s=$secret&fp=${fp.uppercase()}")!!
-        assertEquals("192.168.0.230", l.host); assertEquals(7878, l.port); assertEquals(fp, l.fingerprint); assertEquals(secret, l.secret)
-        assertEquals("https://192.168.0.230:7878/#s=$secret&fp=$fp", l.url())
-        assertEquals("https://192.168.0.230:7878/", l.withoutSecret().url())
+        val l = PairLink.parse("https://192.168.1.20:7878/#s=$secret&fp=${fp.uppercase()}")!!
+        assertEquals("192.168.1.20", l.host); assertEquals(7878, l.port); assertEquals(fp, l.fingerprint); assertEquals(secret, l.secret)
+        assertEquals("https://192.168.1.20:7878/#s=$secret&fp=$fp", l.url())
+        assertEquals("https://192.168.1.20:7878/", l.withoutSecret().url())
     }
 
     @Test fun acceptsColonSeparatedFingerprintAndZenvyScheme() {
@@ -30,18 +30,18 @@ class PairLinkTest {
     @Test fun rejectsAnythingMalformedOrDangerous() {
         val bad = listOf(
             null, "", "   ", "garbage",
-            "http://192.168.0.230:7878/#fp=$fp",                 // plain http is never accepted
+            "http://192.168.1.20:7878/#fp=$fp",                 // plain http is never accepted
             "javascript:alert(1)", "file:///etc/passwd", "intent://x#Intent;end",
-            "https://192.168.0.230:7878/",                       // no fingerprint
-            "https://192.168.0.230:7878/#fp=abc",                // short fingerprint
-            "https://192.168.0.230:7878/#fp=${"z".repeat(64)}",  // not hex
-            "https://192.168.0.230:70000/#fp=$fp",               // bad port
-            "https://192.168.0.230:0/#fp=$fp",
+            "https://192.168.1.20:7878/",                       // no fingerprint
+            "https://192.168.1.20:7878/#fp=abc",                // short fingerprint
+            "https://192.168.1.20:7878/#fp=${"z".repeat(64)}",  // not hex
+            "https://192.168.1.20:70000/#fp=$fp",               // bad port
+            "https://192.168.1.20:0/#fp=$fp",
             "https://exa mple.com:7878/#fp=$fp",                 // whitespace in host
-            "https://192.168.0.230:7878/#s=short&fp=$fp",        // secret too short
-            "https://192.168.0.230:7878/#s=${"a".repeat(65)}&fp=$fp",
-            "https://192.168.0.230:7878/#s=a b c d e f g h i j k l&fp=$fp",
-            "https://user:pw@192.168.0.230:7878/#fp=$fp".replace("user:pw@", "evil.example\u0000@"),
+            "https://192.168.1.20:7878/#s=short&fp=$fp",        // secret too short
+            "https://192.168.1.20:7878/#s=${"a".repeat(65)}&fp=$fp",
+            "https://192.168.1.20:7878/#s=a b c d e f g h i j k l&fp=$fp",
+            "https://user:pw@192.168.1.20:7878/#fp=$fp".replace("user:pw@", "evil.example\u0000@"),
             "https://" + "a".repeat(300) + ":7878/#fp=$fp",
         )
         for (b in bad) assertNull("should reject: $b", PairLink.parse(b))
@@ -49,19 +49,19 @@ class PairLinkTest {
 
     @Test fun userInfoTrickDoesNotChangeTheHost() {
         // "https://trusted@evil" must resolve to host=evil, never to "trusted".
-        val l = PairLink.parse("https://192.168.0.230@evil.example:7878/#fp=$fp")
+        val l = PairLink.parse("https://192.168.1.20@evil.example:7878/#fp=$fp")
         assertTrue(l == null || l.host == "evil.example")
     }
 
     @Test fun sameOriginIsStrict() {
-        val l = PairLink.parse("https://192.168.0.230:7878/#fp=$fp")!!
-        assertTrue(l.isSameOrigin("https://192.168.0.230:7878/"))
-        assertTrue(l.isSameOrigin("https://192.168.0.230:7878/ws?x=1"))
-        assertFalse(l.isSameOrigin("http://192.168.0.230:7878/"))
-        assertFalse(l.isSameOrigin("https://192.168.0.230:7879/"))
-        assertFalse(l.isSameOrigin("https://192.168.0.231:7878/"))
-        assertFalse(l.isSameOrigin("https://192.168.0.230.evil.example:7878/"))
-        assertFalse(l.isSameOrigin("https://evil.example/?https://192.168.0.230:7878/"))
+        val l = PairLink.parse("https://192.168.1.20:7878/#fp=$fp")!!
+        assertTrue(l.isSameOrigin("https://192.168.1.20:7878/"))
+        assertTrue(l.isSameOrigin("https://192.168.1.20:7878/ws?x=1"))
+        assertFalse(l.isSameOrigin("http://192.168.1.20:7878/"))
+        assertFalse(l.isSameOrigin("https://192.168.1.20:7879/"))
+        assertFalse(l.isSameOrigin("https://192.168.1.21:7878/"))
+        assertFalse(l.isSameOrigin("https://192.168.1.20.evil.example:7878/"))
+        assertFalse(l.isSameOrigin("https://evil.example/?https://192.168.1.20:7878/"))
         assertFalse(l.isSameOrigin("javascript:void(0)"))
         assertFalse(l.isSameOrigin("not a url"))
     }

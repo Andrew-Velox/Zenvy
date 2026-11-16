@@ -2,7 +2,11 @@
 
 # Zenvy
 
-Adaptive remote control for Hyprland from your phone. **Feature-complete for daily use on Hyprland (Phases 0–7 done; packaging and hardening, Phase 8, are still to do).** See [PLAN.md](PLAN.md) for the full design and the verified-vs-assumed status of every claim.
+Control your Hyprland PC from your phone: touchpad, keyboard, windows and workspaces, media and volume, brightness, a live screen preview you can click through, files, clipboard, the PC's sound on your phone, power and unlock. Nothing leaves your network: no account, no cloud, no telemetry.
+
+**Status:** feature-complete for daily use on Hyprland and heading for its first public release (0.1.0). It is tested on one reference machine (Arch Linux, Hyprland); other distributions are untested for now. [PLAN.md](PLAN.md) is the full design and records what was verified and what is still assumed. Security model and reporting: [SECURITY.md](SECURITY.md).
+
+For development (see [CONTRIBUTING.md](CONTRIBUTING.md)):
 
 ```bash
 cargo build
@@ -21,16 +25,22 @@ cargo test
 
 ## Install and run
 
-```bash
-cargo install --path crates/zenvyd --root ~/.local --locked   # puts `zenvyd` in ~/.local/bin
-zenvyd serve                                                  # run in a terminal, or as a service:
+You need Hyprland on Wayland, a phone on the same network, and (optional, each enables a feature) `grim`, `wl-clipboard`, `pipewire-pulse`/`libpulse`, `libnotify`, `ddcutil` and `wtype`; `zenvyd doctor` shows what is missing.
 
-mkdir -p ~/.config/systemd/user
-cp packaging/systemd/zenvyd.service ~/.config/systemd/user/
-systemctl --user enable --now zenvyd                          # starts at login; logs: journalctl --user -u zenvyd
+**Arch Linux:** `makepkg -si` in `packaging/arch/` (it builds from the release tarball; an AUR package will follow), then `systemctl --user enable --now zenvyd`.
+
+**Any distribution, as your user (nothing outside your home directory):**
+
+```bash
+git clone https://github.com/Andrew-Velox/Zenvy && cd Zenvy
+packaging/install.sh --enable      # builds with cargo (or uses the prebuilt zenvyd from a release tarball),
+                                   # installs ~/.local/bin/zenvyd and a systemd user service, starts it
+zenvyd pair                        # QR code; scan it with the Android app, then approve on this PC
 ```
 
-Then pair: `zenvyd pair` and scan the QR code in the Android app. The service listens on your LAN address and only authenticated, approved phones can use it; stop it with `systemctl --user disable --now zenvyd`.
+The service starts at login (`journalctl --user -u zenvyd` for logs) and only authenticated, approved phones can use it. `packaging/uninstall.sh` removes it again (`--purge` also deletes paired phones and settings; your received files are never touched). Stopping or restarting the service does not close apps you started from the phone.
+
+The Android app is in the release as an APK (`adb install`, or open the file on the phone); to build it yourself see [android/README.md](android/README.md). Releases are checksummed, built reproducibly and carry signed provenance ([docs/RELEASING.md](docs/RELEASING.md), [docs/REPRODUCIBLE.md](docs/REPRODUCIBLE.md)).
 
 ## Browser tabs (optional)
 

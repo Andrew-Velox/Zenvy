@@ -1,6 +1,6 @@
 [package]
 name = "zenvy-power"
-version = "0.0.1"
+version = "0.1.0"
 edition = "2021"
 license.workspace = true
 description = "Lock, suspend, reboot and power off through logind, plus lock-screen detection"

@@ -26,7 +26,7 @@ class DownloaderTest {
     }
 
     @Test fun openRefusesAnythingButADownloadPath() {
-        val pin = PairLink("192.168.0.230", 7878, "a".repeat(64), null)
+        val pin = PairLink("192.168.1.20", 7878, "a".repeat(64), null)
         try { Downloader.open(pin, "/ws"); throw AssertionError("must refuse") } catch (_: IllegalArgumentException) {}
     }
 }

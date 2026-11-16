@@ -6,7 +6,7 @@ async fn ws(u: WebSocketUpgrade) -> impl IntoResponse {
 }
 #[tokio::main]
 async fn main() {
-    let ip = std::env::args().nth(1).unwrap_or("192.168.0.230".into());
+    let ip = std::env::args().nth(1).unwrap_or("192.168.1.20".into());
     let cert = rcgen::generate_simple_self_signed(vec![ip.clone(), "localhost".into()]).unwrap();
     let cfg = axum_server::tls_rustls::RustlsConfig::from_pem(cert.cert.pem().into_bytes(), cert.key_pair.serialize_pem().into_bytes()).await.unwrap();
     let app = Router::new()

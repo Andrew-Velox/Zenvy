@@ -320,7 +320,7 @@ mod tests {
         let l = parse(
             r#"schema_version = 1
 [server]
-bind = ["192.168.0.230"]
+bind = ["192.168.1.20"]
 port = 7878
 [backends]
 "input.pointer" = "uinput"

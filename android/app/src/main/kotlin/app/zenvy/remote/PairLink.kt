@@ -5,7 +5,7 @@ import java.net.URI
 /**
  * A Zenvy PC: its address, the SHA-256 fingerprint of the certificate it must present, and an
  * optional one-time pairing secret. Parsed from the QR link the agent prints
- * (`https://192.168.0.230:7878/#s=<secret>&fp=<sha256 hex>`); `zenvy://` links have the same shape.
+ * (`https://192.168.1.20:7878/#s=<secret>&fp=<sha256 hex>`); `zenvy://` links have the same shape.
  *
  * Pure Kotlin on purpose (no android.* imports) so it is unit-testable and cannot be tricked by
  * platform URL parsing quirks.

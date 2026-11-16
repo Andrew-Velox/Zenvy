@@ -78,7 +78,7 @@ Why these are realistic: the agent is I/O bound and event-driven (Hyprland `sock
 | Portals | `xdg-desktop-portal-hyprland` 1.4.1 installed (`hyprland.portal` present) |
 | Monitor | HDMI-A-1 1920×1080@60, scale 1 |
 | Battery | `/sys/class/power_supply` contains no battery → this is a desktop; battery capability must be `unavailable`, not an error |
-| LAN | `enp5s0` 192.168.0.230/24 (also a second 10.x interface, so **the agent must not guess "the" LAN address**; bind decisions need to be explicit/configurable) |
+| LAN | `enp5s0` 192.168.1.20/24 (also a second 10.x interface, so **the agent must not guess "the" LAN address**; bind decisions need to be explicit/configurable) |
 
 Note: this single data point proves nothing about other distros; hence the adaptive design and the test matrix in §14.
 
@@ -543,7 +543,7 @@ Hyprland config is never modified. If something would benefit from a Hyprland se
 schema_version = 1
 
 [server]
-bind = ["auto"]            # "auto" = interfaces the user selected at first run; or ["192.168.0.230:7878"]
+bind = ["auto"]            # "auto" = interfaces the user selected at first run; or ["192.168.1.20:7878"]
 port = 7878
 tls = "self-signed"        # "self-signed" | "tailscale" | { cert = "...", key = "..." }
 allow_remote = false       # true only when listening on tailscale0 / wg interfaces
@@ -776,7 +776,7 @@ Rules: commands are idempotent where possible; pointer-move messages use `seq` a
 
 Estimates assume 1–2 engineers; they are guesses, not commitments.
 
-**Status (2026-11-17).** Phases 0–7 are built and tested on the reference machine (see Appendices A–Q for what was verified and what is still an assumption); Phase 8 (hardening, distro matrix, packaging, signed releases) is deferred. Deliberate differences from the plan as first written: the phone UI is one embedded HTML page plus a thin native Android shell instead of a Svelte PWA with a service worker; screen streaming ships the JPEG tier only (Appendix Q4; no portal/PipeWire/H.264/WebRTC); file transfer supports progress and cancel but not resume (Appendix Q3); the battery module is skipped because the reference machine is a desktop; Wake-on-LAN and the login screen (before any user session exists) are not covered because the agent is a user-session service and no root helper is planned.
+**Status (2026-11-17).** Phases 0–7 are built and tested on the reference machine (see Appendices A–Q for what was verified and what is still an assumption); Phase 8 (hardening, packaging, signed releases) is partly done (Appendix Q7: the distro matrix, deb/rpm, soak and external review remain). Deliberate differences from the plan as first written: the phone UI is one embedded HTML page plus a thin native Android shell instead of a Svelte PWA with a service worker; screen streaming ships the JPEG tier only (Appendix Q4; no portal/PipeWire/H.264/WebRTC); file transfer supports progress and cancel but not resume (Appendix Q3); the battery module is skipped because the reference machine is a desktop; Wake-on-LAN and the login screen (before any user session exists) are not covered because the agent is a user-session service and no root helper is planned.
 
 ### Phase 0 — Spikes (1–2 weeks, before committing to Phase 1 design)
 Resolve every **[A]** that the architecture leans on:
@@ -1406,4 +1406,17 @@ Explicit, one tap per transfer: **nothing syncs automatically** (clipboards ofte
 **Moving a window to another workspace.** Every window on the Desk screen has an arrow button that opens a "Move to workspace" sheet: the existing workspaces with their window counts (the window's own workspace is greyed out) plus the next free one when there is no empty workspace yet, and a "Go there too" switch (remembered on the phone, off by default) that also switches to the target. It uses the existing validated `move_window_to_workspace` command (`movetoworkspacesilent`, so without the switch the view stays where it is) followed by `switch_workspace` when the switch is on; no new permission (`windows`). Checked in the preview: sheet contents, move without and with following, and the error message staying visible when the PC refuses.
 
 **Brightness moved to the Screen tab.** The brightness slider(s) now sit at the top of the Screen tab (one per adjustable display), no longer on Media (the lock page keeps its own slider). The Screen tab is shown when screen capture is available or when brightness control is, so a PC without `grim` still gets the tab with just the sliders; the preview controls only appear when capture works. Checked in the preview: sliders on Screen and gone from Media, and the tab with capture off (sliders only) and on.
+
+### Q7 Phase 8 (part 1): hardening, packaging and release automation for a public release
+The distro matrix is deliberately left for later; everything below was done and checked on the Arch reference machine.
+
+**Hardening.** A review of the network-facing code found no `unsafe` besides resetting SIGPIPE for one-shot commands, no panics reachable from phone input (the remaining `unwrap` calls are on mutexes), and four things fixed: (1) no limit on simultaneous sockets, now 16 per address and 64 in total for live-control connections (`ConnLimit`, refused with 503, slot freed when the socket ends); (2) no timeout on request headers, now 10 s (slow-loris); (3) a randomized test found that file names from phones could keep right-to-left override and zero-width characters (a name like `photo<RLO>gpj.exe` reads as `photoexe.jpg`) and could exceed the 255-byte file-system limit with multi-byte characters, so names are now stripped of those characters and capped at 120 characters and 200 bytes; (4) the systemd unit had `NoNewPrivileges`, which every app launched from the phone would inherit (breaking setuid helpers and sandboxed apps), so it was removed and `KillMode=process` added so that restarting the agent does not close those apps (checked with a transient unit: the child survives a stop with `KillMode=process` and dies with the default). The agent was also run for real under a transient `systemd-run --user` unit: every backend came up and the admin socket worked.
+
+**Randomized tests.** `zenvy-proto/tests/fuzz_commands.rs` feeds every phone command type about 40 000 mutated and 20 000 random inputs (and a 2 MB string and 100-deep nesting) to parsing and `validate`; `zenvy-net` does the same for file names and the browser extension's tab and favicon data; `zenvy-apps` for desktop entries and `Exec` lines. A deterministic generator, so a failure reproduces. They complement, not replace, coverage-guided fuzzing (`cargo fuzz` needs a nightly toolchain and is not set up).
+
+**Packaging.** `packaging/systemd/zenvyd.service` (no sandboxing on purpose, explained in the file), `packaging/install.sh` and `uninstall.sh` (user level, nothing outside the home directory, `--purge` removes paired phones, certificate, settings and the audit log; tested in a throwaway home with a fake `systemctl`: files appear, uninstall leaves only empty directories), and `packaging/arch/PKGBUILD`, built and tested with a real `makepkg` (tests run in `check()`; it needs `options=('!lto')` because Arch's LTO flags break linking the C crypto library; `namcap` shows only advisory warnings).
+
+**Releases.** `Cargo.toml` and every crate are at 0.1.0; `packaging/check-version.sh` compares the tag with the Cargo, Android, PKGBUILD and changelog versions. The agent build is reproducible: two builds in different directories gave the same SHA-256 with the flags in `docs/REPRODUCIBLE.md`. `.github/workflows/ci.yml` (fmt, clippy with warnings denied, tests, `cargo audit`, phone-UI tests, Android unit tests and debug build, version check) and `release.yml` (on a `v*` tag: tests, reproducible build, tarball, signed APK when the keystore secrets exist, `SHA256SUMS`, Sigstore build provenance, **draft** release) are in place. `docs/RELEASING.md` explains creating the signing key (never generated for the maintainer) and the secrets. The workflows were validated as YAML but have not run: they run on GitHub once the repository is public or pushed. The Rust tests and clippy pass with a stripped environment (no Wayland, Hyprland or D-Bus), which is what the CI runner looks like.
+
+**Still open for Phase 8.** The distro matrix (Fedora, Ubuntu, Debian, openSUSE, non-Hyprland Wayland compositors) and `.deb`/`.rpm` packages; a long soak test; an external security review; coverage-guided fuzzing; the first real run of the GitHub workflows; creating the signing key and the AUR entry.
 
