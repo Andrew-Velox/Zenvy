@@ -16,7 +16,7 @@ jobs:
     name: Rust (fmt, clippy, tests)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: System libraries
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libopus-dev pkg-config cmake clang
       - uses: dtolnay/rust-toolchain@1.98.1   # pinned: a newer clippy can add lints; raise it on purpose
@@ -34,7 +34,7 @@ jobs:
       contents: read
       checks: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: rustsec/audit-check@v2
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
@@ -43,8 +43,8 @@ jobs:
     name: Phone UI tests
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
       - run: node tests/typing.mjs
@@ -54,12 +54,12 @@ jobs:
     name: Android (unit tests, debug build)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: 17
-      - uses: gradle/actions/setup-gradle@v4
+      - uses: gradle/actions/setup-gradle@v6
       - name: Unit tests and debug build
         working-directory: android
         run: ./gradlew --no-daemon testDebugUnitTest assembleDebug
@@ -68,7 +68,7 @@ jobs:
     name: Version numbers agree
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - run: |
           v="$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)"
           packaging/check-version.sh "v$v"

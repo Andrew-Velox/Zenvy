@@ -18,7 +18,7 @@ jobs:
   release:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Version numbers must match the tag
         run: packaging/check-version.sh "${GITHUB_REF_NAME}"
@@ -48,11 +48,11 @@ jobs:
           cp -r packaging LICENSE README.md SECURITY.md CHANGELOG.md browser-extension "dist/$d/"
           tar --sort=name --owner=0 --group=0 --numeric-owner --mtime=@1700000000 -czf "dist/$d.tar.gz" -C dist "$d"
 
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: 17
-      - uses: gradle/actions/setup-gradle@v4
+      - uses: gradle/actions/setup-gradle@v6
 
       # Signing uses YOUR keystore, stored only as repository secrets (see docs/RELEASING.md).
       # Without the secrets the APK step is skipped and the release has the agent only.
