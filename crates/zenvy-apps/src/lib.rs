@@ -478,6 +478,31 @@ mod tests {
     }
 
     #[test]
+    fn random_entries_and_exec_lines_never_panic() {
+        let mut x = 0x2545_F491_4F6C_DD1Du64;
+        let mut next = || {
+            x ^= x << 13;
+            x ^= x >> 7;
+            x ^= x << 17;
+            x
+        };
+        let alphabet: Vec<char> = "%\"\\ \t\n=;[]$`'abcFfUuckiI0é日\u{0}\u{202e}"
+            .chars()
+            .collect();
+        for _ in 0..20000 {
+            let n = (next() % 80) as usize;
+            let s: String = (0..n)
+                .map(|_| alphabet[(next() % alphabet.len() as u64) as usize])
+                .collect();
+            let _ = parse_exec(&s, "N");
+            let entry = format!(
+                "[Desktop Entry]\nType=Application\nName={s}\nExec={s}\nOnlyShowIn={s}\n{s}"
+            );
+            let _ = parse_entry("x", &entry, &d(&["Hyprland"]));
+        }
+    }
+
+    #[test]
     fn launching_runs_the_program_without_a_shell() {
         let t = tempfile::tempdir().unwrap();
         let marker = t.path().join("started");

@@ -50,7 +50,53 @@ pub struct NetConfig {
     pub apps: Option<Arc<zenvy_apps::Apps>>,
 }
 
+/// Caps how many live-control sockets exist at once, in total and per address, so one client on the LAN cannot
+/// exhaust the agent by opening connections (each pending one holds memory until it authenticates or times out).
+pub const MAX_SOCKETS_TOTAL: usize = 64;
+pub const MAX_SOCKETS_PER_IP: usize = 16;
+
+#[derive(Default)]
+pub struct ConnLimit {
+    live: Mutex<(usize, BTreeMap<IpAddr, usize>)>,
+}
+
+/// Held for as long as a socket lives; dropping it frees the slot.
+pub struct ConnGuard {
+    limit: Arc<ConnLimit>,
+    ip: IpAddr,
+}
+
+impl ConnLimit {
+    pub fn acquire(self: &Arc<Self>, ip: IpAddr) -> Option<ConnGuard> {
+        let mut g = self.live.lock().unwrap_or_else(|e| e.into_inner());
+        let per = g.1.get(&ip).copied().unwrap_or(0);
+        if g.0 >= MAX_SOCKETS_TOTAL || per >= MAX_SOCKETS_PER_IP {
+            return None;
+        }
+        g.0 += 1;
+        *g.1.entry(ip).or_insert(0) += 1;
+        Some(ConnGuard {
+            limit: self.clone(),
+            ip,
+        })
+    }
+}
+
+impl Drop for ConnGuard {
+    fn drop(&mut self) {
+        let mut g = self.limit.live.lock().unwrap_or_else(|e| e.into_inner());
+        g.0 = g.0.saturating_sub(1);
+        if let Some(n) = g.1.get_mut(&self.ip) {
+            *n = n.saturating_sub(1);
+            if *n == 0 {
+                g.1.remove(&self.ip);
+            }
+        }
+    }
+}
+
 pub struct App {
+    pub conns: Arc<ConnLimit>,
     pub adapter: HyprlandAdapter,
     /// `None` when no input backend is available; phones then get `capability_unavailable`.
     pub input: Option<Arc<InputAdapter<UinputSink>>>,
@@ -106,6 +152,7 @@ impl App {
     ) -> Arc<Self> {
         let audio_for_mute = audio.clone();
         Arc::new(Self {
+            conns: Arc::default(),
             adapter,
             input,
             audio,
@@ -168,5 +215,34 @@ impl App {
             value
         };
         let _ = self.hub.send(Hub::Evt(self.evt(topic, value)));
+    }
+}
+
+#[cfg(test)]
+mod conn_tests {
+    use super::*;
+
+    #[test]
+    fn sockets_are_capped_per_address_and_in_total_and_freed_on_drop() {
+        let l = Arc::new(ConnLimit::default());
+        let a: IpAddr = "192.0.2.1".parse().unwrap();
+        let held: Vec<_> = (0..MAX_SOCKETS_PER_IP)
+            .map(|_| l.acquire(a).expect("under the per-address cap"))
+            .collect();
+        assert!(l.acquire(a).is_none(), "one address cannot take more");
+        let b: IpAddr = "192.0.2.2".parse().unwrap();
+        assert!(l.acquire(b).is_some(), "another address is unaffected");
+        drop(held);
+        assert!(l.acquire(a).is_some(), "slots come back");
+        // the total cap holds across many addresses
+        let mut all = Vec::new();
+        for i in 0..200u8 {
+            let ip: IpAddr = format!("198.51.100.{i}").parse().unwrap();
+            if let Some(g) = l.acquire(ip) {
+                all.push(g);
+            }
+        }
+        assert!(all.len() < MAX_SOCKETS_TOTAL + 1 && all.len() >= MAX_SOCKETS_TOTAL - 2);
+        assert!(l.acquire("203.0.113.9".parse().unwrap()).is_none());
     }
 }

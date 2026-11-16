@@ -2305,6 +2305,7 @@ dependencies = [
  "bytes",
  "ed25519-dalek",
  "futures-util",
+ "hyper-util",
  "rcgen",
  "serde",
  "serde_json",

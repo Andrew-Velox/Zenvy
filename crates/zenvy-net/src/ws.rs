@@ -75,9 +75,15 @@ pub async fn ws_handler(
     {
         return (StatusCode::TOO_MANY_REQUESTS, "slow down").into_response();
     }
+    let Some(guard) = app.conns.acquire(peer.ip()) else {
+        return (StatusCode::SERVICE_UNAVAILABLE, "too many connections").into_response();
+    };
     ws.max_message_size(16 * 1024)
         .max_frame_size(16 * 1024)
-        .on_upgrade(move |s| session(app, peer.ip(), s))
+        .on_upgrade(move |s| async move {
+            let _guard = guard; // the slot is held until the socket ends
+            session(app, peer.ip(), s).await
+        })
 }
 
 async fn send(s: &mut WebSocket, v: Value) -> bool {

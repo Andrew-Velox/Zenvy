@@ -24,6 +24,7 @@ zenvy-brightness.workspace = true
 zenvy-media.workspace = true
 axum.workspace = true
 axum-server.workspace = true
+hyper-util.workspace = true
 rcgen.workspace = true
 sha2.workspace = true
 subtle.workspace = true

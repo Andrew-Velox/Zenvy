@@ -29,13 +29,27 @@ pub fn new_ticket() -> String {
         .collect()
 }
 
-/// A plain file name from whatever a phone sent: the last path component only, no control characters, no leading dots,
-/// characters that trouble other systems replaced, at most 120 characters with the extension kept.
+/// Characters that do not show but change how a name reads (bidirectional overrides can make `photo\u{202e}gpj.exe`
+/// look like `photoexe.jpg`) or hide inside a name (zero-width, soft hyphen, byte-order mark).
+fn is_invisible(c: char) -> bool {
+    matches!(c,
+        '\u{00AD}' | '\u{061C}' | '\u{180E}' | '\u{200B}'..='\u{200F}' | '\u{202A}'..='\u{202E}'
+        | '\u{2060}'..='\u{2064}' | '\u{2066}'..='\u{206F}' | '\u{FEFF}' | '\u{FFF9}'..='\u{FFFB}')
+}
+
+/// Most characters and bytes a stored name may have (file systems limit a name to 255 bytes; room is left for the
+/// ` (2)` that keeps an existing file from being overwritten).
+const MAX_NAME_CHARS: usize = 120;
+const MAX_NAME_BYTES: usize = 200;
+
+/// A plain file name from whatever a phone sent: the last path component only, no control or invisible characters,
+/// no leading dots, characters that trouble other systems replaced, at most 120 characters and 200 bytes with the
+/// extension kept.
 pub fn sanitize_filename(raw: &str) -> Option<String> {
     let last = raw.rsplit(['/', '\\']).next().unwrap_or("");
     let cleaned: String = last
         .chars()
-        .filter(|c| !c.is_control())
+        .filter(|c| !c.is_control() && !is_invisible(*c))
         .map(|c| if "<>:\"|?*".contains(c) { '_' } else { c })
         .collect();
     let name = cleaned
@@ -46,19 +60,27 @@ pub fn sanitize_filename(raw: &str) -> Option<String> {
     if name.is_empty() || name.chars().all(|c| c == '_') {
         return None;
     }
-    if name.chars().count() <= 120 {
+    if name.chars().count() <= MAX_NAME_CHARS && name.len() <= MAX_NAME_BYTES {
         return Some(name);
     }
     let (stem, ext) = match name.rfind('.') {
         Some(i) if name.len() - i <= 16 && i > 0 => (&name[..i], &name[i..]),
         _ => (name.as_str(), ""),
     };
-    let keep = 120usize.saturating_sub(ext.chars().count());
-    Some(format!(
-        "{}{}",
-        stem.chars().take(keep).collect::<String>(),
-        ext
-    ))
+    let mut out = String::new();
+    for c in stem.chars() {
+        if out.chars().count() + 1 + ext.chars().count() > MAX_NAME_CHARS
+            || out.len() + c.len_utf8() + ext.len() > MAX_NAME_BYTES
+        {
+            break;
+        }
+        out.push(c);
+    }
+    let out = format!("{}{}", out.trim_end_matches(['.', ' ']), ext);
+    if out.is_empty() || out.starts_with('.') {
+        return None;
+    }
+    Some(out)
 }
 
 /// Safe to show in a notification.

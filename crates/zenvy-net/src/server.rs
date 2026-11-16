@@ -340,6 +340,9 @@ pub fn router(app: Arc<App>) -> Router {
         .with_state(app)
 }
 
+/// How long a client may take to send the request line and headers.
+const HEADER_READ_TIMEOUT: Duration = Duration::from_secs(10);
+
 /// Serves HTTPS until `shutdown` resolves.
 pub async fn serve(
     app: Arc<App>,
@@ -359,9 +362,16 @@ pub async fn serve(
         h2.graceful_shutdown(Some(Duration::from_secs(2)));
     });
     // TCP_NODELAY: audio frames and pointer moves are small and frequent; Nagle's algorithm would hold them back
-    axum_server::bind_rustls(addr, cfg)
+    let mut server = axum_server::bind_rustls(addr, cfg)
         .map(|a| a.acceptor(axum_server::accept::NoDelayAcceptor::new()))
-        .handle(handle)
+        .handle(handle);
+    // a client that opens a connection and never finishes its request headers is dropped (slow-loris)
+    server
+        .http_builder()
+        .http1()
+        .timer(hyper_util::rt::TokioTimer::new())
+        .header_read_timeout(HEADER_READ_TIMEOUT);
+    server
         .serve(router(app).into_make_service_with_connect_info::<SocketAddr>())
         .await
 }

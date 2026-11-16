@@ -25,6 +25,7 @@ toml = "0.8"
 tempfile = "3"
 wayland-client = "0.31"
 axum = { version = "0.8", features = ["ws"] }
+hyper-util = { version = "0.1", default-features = false, features = ["tokio"] }
 axum-server = { version = "0.7", features = ["tls-rustls"] }
 rcgen = "0.13"
 sha2 = "0.10"

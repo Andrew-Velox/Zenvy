@@ -6,6 +6,8 @@ mod app;
 mod browser;
 mod clipboard;
 mod files;
+#[cfg(test)]
+mod fuzz_tests;
 mod listen;
 mod power;
 mod server;
