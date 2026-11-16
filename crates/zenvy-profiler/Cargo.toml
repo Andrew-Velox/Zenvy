@@ -1,0 +1,13 @@
+[package]
+name = "zenvy-profiler"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+[dependencies]
+zenvy-proto.workspace = true
+zenvy-core.workspace = true
+wayland-client.workspace = true
+rustix = { version = "1", features = ["fs"] }
+serde_json.workspace = true
+[dev-dependencies]
+tempfile.workspace = true

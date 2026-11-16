@@ -1,0 +1,16 @@
+[Unit]
+Description=Zenvy agent (phone remote control for Hyprland)
+After=graphical-session.target
+PartOf=graphical-session.target
+
+[Service]
+Type=simple
+ExecStart=%h/.local/bin/zenvyd serve
+Restart=on-failure
+RestartSec=2
+# Runs as your user, never as root. Extra sandboxing is deliberately not set yet: it has not been
+# tested against uinput / Wayland socket access (see PLAN.md §9).
+NoNewPrivileges=yes
+
+[Install]
+WantedBy=graphical-session.target

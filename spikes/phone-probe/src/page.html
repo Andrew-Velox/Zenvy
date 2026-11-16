@@ -1,0 +1,20 @@
+<!doctype html><meta charset=utf-8><meta name=viewport content="width=device-width,initial-scale=1">
+<title>zenvy phone probe</title>
+<style>body{font:14px monospace;margin:0;background:#111;color:#ddd}#pad{height:45vh;background:#223;touch-action:none;display:flex;align-items:center;justify-content:center}pre{margin:8px;white-space:pre-wrap}</style>
+<div id=pad>touch/drag here</div><pre id=o>running...</pre>
+<script>
+const o=document.getElementById('o'),r={};
+r.secure=isSecureContext;r.ua=navigator.userAgent;
+r.ed25519=null;
+(async()=>{try{await crypto.subtle.generateKey({name:'Ed25519'},false,['sign']);r.ed25519=true}catch(e){r.ed25519='no: '+e.name}
+r.webcodecs_h264=null;try{r.webcodecs_h264=('VideoDecoder' in self)?(await VideoDecoder.isConfigSupported({codec:'avc1.42E01E'})).supported:'no VideoDecoder'}catch(e){r.webcodecs_h264='err '+e}
+r.webrtc='RTCPeerConnection' in self;r.wakeLock='wakeLock' in navigator;r.clipboardWrite=!!(navigator.clipboard&&navigator.clipboard.writeText);r.clipboardRead=!!(navigator.clipboard&&navigator.clipboard.readText);
+r.serviceWorker='serviceWorker' in navigator;r.vibrate='vibrate' in navigator;r.pointerEvents='PointerEvent' in self;
+r.screen=[screen.width,screen.height,devicePixelRatio];try{await navigator.serviceWorker.register('/sw.js');r.sw_register='ok'}catch(e){r.sw_register='FAIL '+e.name+': '+e.message}
+const ws=new WebSocket('wss://'+location.host+'/ws');const rtts=[];let seq=0,sent={};
+ws.onopen=()=>{r.ws='open';let n=0;const t=setInterval(()=>{if(n++>=200){clearInterval(t);const s=[...rtts].sort((a,b)=>a-b);r.rtt_ms={n:s.length,p50:s[s.length>>1],p95:s[Math.floor(s.length*.95)],max:s[s.length-1]};done();return}sent[seq]=performance.now();ws.send(JSON.stringify({seq:seq++}))},16)};
+ws.onmessage=e=>{const m=JSON.parse(e.data);rtts.push(performance.now()-sent[m.seq])};ws.onerror=()=>{r.ws='error';done()};
+function done(){o.textContent=JSON.stringify(r,null,1);fetch('/report',{method:'POST',body:JSON.stringify(r)})}
+})();
+let moves=0;pad.onpointermove=e=>{moves++;pad.textContent='moves '+moves+' coalesced '+(e.getCoalescedEvents?e.getCoalescedEvents().length:'-')};
+</script>

@@ -1,0 +1,11 @@
+#!/usr/bin/env node
+// Fake `parec` for tests: records its PID and arguments, then writes a real-time 440 Hz tone as raw s16le 48 kHz stereo
+// (20 ms every 20 ms). Never touches real audio.
+const fs = require('fs');
+const dir = process.env.ZENVY_FAKE_DIR;
+fs.appendFileSync(`${dir}/parec.pids`, process.pid + '\n');
+fs.appendFileSync(`${dir}/parec.args`, process.argv.slice(2).join(' ') + '\n');
+let n = 0;
+const frame = () => { const b = Buffer.alloc(3840); for (let i = 0; i < 960; i++) { const v = Math.round(12000 * Math.sin(2 * Math.PI * 440 * (n++) / 48000)); b.writeInt16LE(v, i * 4); b.writeInt16LE(v, i * 4 + 2); } return b; };
+const t = setInterval(() => { if (!process.stdout.write(frame())) { /* backpressure: the reader is slow */ } }, 20);
+process.stdout.on('error', () => process.exit(0));

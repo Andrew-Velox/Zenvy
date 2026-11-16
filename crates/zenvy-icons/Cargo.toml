@@ -1,0 +1,11 @@
+[package]
+name = "zenvy-icons"
+version = "0.0.1"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+description = "Finds the icon of an application window (desktop entry -> icon theme) for the phone UI"
+
+[dependencies]
+
+[dev-dependencies]
+tempfile.workspace = true

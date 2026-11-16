@@ -1,0 +1,12 @@
+[package]
+name = "zenvy-stream"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+[dependencies]
+zenvy-proto.workspace = true
+opus.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+[dev-dependencies]
+tempfile.workspace = true

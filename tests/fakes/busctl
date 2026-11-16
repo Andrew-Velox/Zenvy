@@ -1,0 +1,3 @@
+#!/usr/bin/env node
+// Fake `busctl`: logind says yes to every Can* question.
+console.log('s "yes"');

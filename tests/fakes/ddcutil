@@ -1,0 +1,21 @@
+#!/usr/bin/env node
+// Fake `ddcutil` for tests: one fake monitor on i2c bus 2 whose state lives in a file. Slow on purpose (150 ms per
+// write, like a real monitor) so write coalescing is observable. Logs every invocation. Never touches real hardware.
+const fs = require('fs');
+const dir = process.env.ZENVY_FAKE_DIR;
+const f = n => `${dir}/${n}`;
+const args = process.argv.slice(2);
+fs.appendFileSync(f('ddc.log'), args.join(' ') + '\n');
+const st = () => JSON.parse(fs.readFileSync(f('bright.json'), 'utf8'));
+const [cmd, a1, a2] = args;
+const bus = () => { const i = args.indexOf('--bus'); return i >= 0 ? parseInt(args[i + 1], 10) : NaN; };
+if (cmd === 'detect') {
+  for (const [i, d] of st().ddc.entries()) console.log(`Display ${i + 1}\n   I2C bus:          /dev/i2c-${d.bus}\n   DRM connector:    ${d.connector}\n   drm_connector_id: 1\n   Monitor:          FAK:${d.model}:${d.serial}\n`);
+} else if (cmd === 'getvcp' && a1 === '10') {
+  const d = st().ddc.find(x => x.bus === bus()); if (!d) process.exit(1);
+  console.log(`VCP 10 C ${d.cur} ${d.max}`);
+} else if (cmd === 'setvcp' && a1 === '10') {
+  const s = st(); const d = s.ddc.find(x => x.bus === bus()); if (!d) process.exit(1);
+  setTimeout(() => { d.cur = parseInt(a2, 10); fs.writeFileSync(f('bright.json'), JSON.stringify(s)); }, 150);
+  setTimeout(() => process.exit(0), 160);
+} else process.exit(1);

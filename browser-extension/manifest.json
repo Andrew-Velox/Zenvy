@@ -1,0 +1,32 @@
+{
+  "manifest_version": 3,
+  "name": "Zenvy Browser Bridge",
+  "version": "0.2.0",
+  "description": "Lets the Zenvy phone app list, switch and close this browser's tabs. Sends only tab titles, site names and small site icons (taken from the browser's own icon cache) to the Zenvy agent on this computer (loopback), never full addresses.",
+  "minimum_chrome_version": "116",
+  "permissions": [
+    "tabs",
+    "storage",
+    "alarms",
+    "favicon"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "options_page": "options.html",
+  "action": {
+    "default_title": "Zenvy Browser Bridge",
+    "default_icon": {
+      "16": "icons/icon-16.png",
+      "32": "icons/icon-32.png",
+      "48": "icons/icon-48.png",
+      "128": "icons/icon-128.png"
+    }
+  },
+  "icons": {
+    "16": "icons/icon-16.png",
+    "32": "icons/icon-32.png",
+    "48": "icons/icon-48.png",
+    "128": "icons/icon-128.png"
+  }
+}

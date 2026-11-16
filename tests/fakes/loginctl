@@ -1,0 +1,10 @@
+#!/usr/bin/env node
+// Fake `loginctl` for tests. Never locks anything real: "locked" is the existence of a file in the fake dir.
+const fs = require('fs');
+const dir = process.env.ZENVY_FAKE_DIR;
+const a = process.argv.slice(2);
+if (a[0] === 'show-user') { console.log('5'); process.exit(0); }
+if (a[0] === 'show-session') { console.log(fs.existsSync(`${dir}/locked`) ? 'yes' : 'no'); process.exit(0); }
+fs.appendFileSync(`${dir}/power.log`, 'loginctl ' + a.join(' ') + '\n');
+if (a[0] === 'lock-session') { fs.writeFileSync(`${dir}/locked`, ''); }
+process.exit(0);

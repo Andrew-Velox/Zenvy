@@ -1,0 +1,24 @@
+#!/usr/bin/env node
+// Fake `pactl` for tests: serves canned PulseAudio-style JSON from a state file, applies set-* commands to it,
+// records every invocation, and "emits" events by tailing an events file. Never touches real audio.
+const fs = require('fs');
+const dir = process.env.ZENVY_FAKE_DIR;
+const f = n => `${dir}/${n}`;
+const args = process.argv.slice(2);
+fs.appendFileSync(f('pactl.log'), args.join(' ') + '\n');
+const st = () => JSON.parse(fs.readFileSync(f('audio.json'), 'utf8'));
+const save = s => fs.writeFileSync(f('audio.json'), JSON.stringify(s));
+const ev = line => fs.appendFileSync(f('events'), line + '\n');
+const dev = d => ({ index: 1, name: d.name, description: d.description, mute: d.mute, state: 'RUNNING', volume: { 'front-left': { value: 0, value_percent: d.volume + '%', db: '' }, 'front-right': { value: 0, value_percent: d.volume + '%', db: '' } } });
+const [a, b, c] = args.filter(x => !x.startsWith('--format'));
+if (a === 'info') console.log(JSON.stringify({ user_name: 'secret-user', host_name: 'secret-host', server_name: 'Fake', default_sink_name: st().default_sink, default_source_name: st().default_source }));
+else if (a === 'list' && b === 'sinks') console.log(JSON.stringify(st().sinks.map(dev)));
+else if (a === 'list' && b === 'sources') console.log(JSON.stringify(st().sources.map(dev)));
+else if (a === 'set-sink-volume') { const s = st(); s.sinks.find(x => x.name === s.default_sink).volume = parseInt(c, 10); save(s); ev("Event 'change' on sink #1"); }
+else if (a === 'set-sink-mute') { const s = st(); s.sinks.find(x => x.name === s.default_sink).mute = c === '1'; save(s); ev("Event 'change' on sink #1"); }
+else if (a === 'set-source-mute') { const s = st(); s.sources.find(x => x.name === s.default_source).mute = c === '1'; save(s); ev("Event 'change' on source #2"); }
+else if (a === 'set-default-sink') { const s = st(); s.default_sink = b; save(s); ev("Event 'change' on server"); }
+else if (a === 'subscribe') { // print new lines of the events file as they appear
+  let pos = fs.existsSync(f('events')) ? fs.statSync(f('events')).size : 0;
+  setInterval(() => { const sz = fs.existsSync(f('events')) ? fs.statSync(f('events')).size : 0; if (sz > pos) { const fd = fs.openSync(f('events'), 'r'); const buf = Buffer.alloc(sz - pos); fs.readSync(fd, buf, 0, sz - pos, pos); fs.closeSync(fd); pos = sz; process.stdout.write(buf.toString()); } }, 50);
+} else { process.exit(1); }

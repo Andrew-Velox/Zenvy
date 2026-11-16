@@ -1,0 +1,17 @@
+# build output
+target/
+**/target/
+node_modules/
+*.apk
+*.aab
+
+# editors / OS
+.idea/
+.vscode/
+.DS_Store
+*.swp
+
+# local logs and scratch
+*.log
+.kotlin/
+.gradle/

@@ -1,0 +1,3 @@
+#!/usr/bin/env node
+// Fake `systemctl` for tests: only records what it was asked. Never suspends, reboots or powers off anything.
+require('fs').appendFileSync(`${process.env.ZENVY_FAKE_DIR}/power.log`, 'systemctl ' + process.argv.slice(2).join(' ') + '\n');
