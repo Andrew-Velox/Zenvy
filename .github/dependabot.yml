@@ -28,6 +28,8 @@ updates:
     ignore:
       - dependency-name: "softprops/action-gh-release"
       - dependency-name: "actions/attest-build-provenance"
+      # the Rust toolchain is pinned on purpose (see docs/REPRODUCIBLE.md); raise it by hand
+      - dependency-name: "dtolnay/rust-toolchain"
     groups:
       actions:
         patterns: ["*"]
