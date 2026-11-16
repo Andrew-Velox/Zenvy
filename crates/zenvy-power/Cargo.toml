@@ -2,7 +2,7 @@
 name = "zenvy-power"
 version = "0.0.1"
 edition = "2021"
-license = "MIT OR Apache-2.0"
+license.workspace = true
 description = "Lock, suspend, reboot and power off through logind, plus lock-screen detection"
 
 [dependencies]

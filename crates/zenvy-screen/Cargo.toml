@@ -2,7 +2,7 @@
 name = "zenvy-screen"
 version = "0.0.1"
 edition = "2021"
-license = "MIT OR Apache-2.0"
+license.workspace = true
 description = "Screen preview for the phone: grim JPEG frames only while somebody views, and tap-to-click mapping"
 
 [dependencies]

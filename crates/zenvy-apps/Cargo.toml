@@ -2,7 +2,7 @@
 name = "zenvy-apps"
 version = "0.0.1"
 edition = "2021"
-license = "MIT OR Apache-2.0"
+license.workspace = true
 description = "Installed applications (desktop entries) and launching them without a shell, for the phone's app launcher"
 
 [dependencies]
