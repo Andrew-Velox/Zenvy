@@ -1103,8 +1103,11 @@ function attachText(kb){
   kb.addEventListener('compositionstart',()=>{composing=true});
   kb.addEventListener('compositionend',()=>{composing=false;sync()});
   kb.addEventListener('input',e=>{if(!e.isComposing||prefs.live)sync()});
-  kb.addEventListener('beforeinput',e=>{if(e.inputType==='insertLineBreak'||e.inputType==='insertParagraph'){e.preventDefault();key('enter')}});
-  kb.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();key('enter')}else if(e.key==='Backspace'&&kb.value===''){key('backspace',[],true)}});
+  // Enter ends the line on the PC, so the field starts empty again (a real keyboard has no text left behind either).
+  // Whatever is still being composed is sent first, so no word is lost or sent after the Enter.
+  const enter=()=>{sync();key('enter');kb.value='';prev='';composing=false};
+  kb.addEventListener('beforeinput',e=>{if(e.inputType==='insertLineBreak'||e.inputType==='insertParagraph'){e.preventDefault();enter()}});
+  kb.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();enter()}else if(e.key==='Backspace'&&kb.value===''){key('backspace',[],true)}});
 }
 /*attachText:end*/
 

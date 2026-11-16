@@ -88,4 +88,24 @@ function rig({ live = true, mods = [] } = {}) {
   const r = rig(); r.edit('hi', false); r.fire('beforeinput', { inputType: 'insertLineBreak' });
   ok(r.pc.text === 'hi\n', 'Enter sends an Enter key press');
 }
+// 10. after Enter the field is empty again, and the next characters are only the new ones
+{
+  const r = rig(); r.edit('hi', false); r.fire('beforeinput', { inputType: 'insertLineBreak' });
+  ok(r.kb.value === '', 'Enter (soft keyboard) clears the field');
+  r.edit('x', false);
+  ok(r.pc.text === 'hi\nx', `typing after Enter sends only the new text, not the old line again (PC: ${JSON.stringify(r.pc.text)})`);
+  const q = rig(); q.edit('ok', false); q.fire('keydown', { key: 'Enter' });
+  ok(q.kb.value === '' && q.pc.text === 'ok\n', 'Enter (hardware key) also clears the field');
+  q.fire('keydown', { key: 'Backspace' });
+  ok(q.pc.text === 'ok', 'Backspace on the emptied field still reaches the PC, like a real keyboard joining the line back');
+}
+// 11. Enter while a word is still being composed (live typing off): the word is sent first, then Enter
+{
+  const r = rig({ live: false }); r.fire('compositionstart');
+  for (const v of ['h', 'he', 'hel']) r.edit(v, true);
+  r.fire('beforeinput', { inputType: 'insertLineBreak' });
+  ok(r.pc.text === 'hel\n' && r.kb.value === '', 'Enter during composition sends the pending word, then Enter, and clears the field');
+  r.fire('compositionend'); r.edit('z', false);
+  ok(r.pc.text === 'hel\nz', 'and the old composition cannot leak into the next line');
+}
 console.log(`\n${pass} passed, ${fail} failed`); process.exit(fail ? 1 : 0);
