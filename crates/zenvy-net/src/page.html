@@ -94,6 +94,12 @@ h2:first-child{margin-top:8px}
 .li-txt b{font-weight:400;font-size:16px;line-height:24px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .li-txt small{font-size:14px;line-height:20px;color:var(--on-surface-v);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .li .ibtn.x{width:56px;height:72px;border-radius:0}
+.li .ibtn.mv{width:48px;height:72px;border-radius:0}
+.mvgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(68px,1fr));gap:8px;margin:12px 0}
+.mvgrid .wsb{width:100%}
+.wsb.cur{opacity:.4}
+.wsb.new{background:transparent;box-shadow:inset 0 0 0 1.5px var(--glass-line);color:var(--on-surface-v)}
+.wsb.new b{font-size:14px}
 .li .ibtn.x.arm{color:var(--error)}
 .empty{padding:24px 16px;color:var(--on-surface-v);font-size:14px}
 .glabel{margin:16px 4px 8px;font-size:12px;line-height:16px;font-weight:500;color:var(--on-surface-v)}
@@ -488,6 +494,7 @@ const ICONS={
   tune:'<path d="M21 4h-7M10 4H3M21 12h-9M8 12H3M21 20h-5M12 20H3M14 2v4M8 10v4M16 18v4"/>',
   back:'<path d="M19 12H5M12 19l-7-7 7-7"/>',
   check:'<path d="M20 6 9 17l-5-5"/>',
+  moveto:'<path d="M3 12h12M10 7l5 5-5 5M20 5v14"/>',
   expand:'<path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/>',
   grip:'<circle cx="6" cy="9" r="1.4"/><circle cx="12" cy="9" r="1.4"/><circle cx="18" cy="9" r="1.4"/><circle cx="6" cy="15" r="1.4"/><circle cx="12" cy="15" r="1.4"/><circle cx="18" cy="15" r="1.4"/>',
   x:'<path d="M18 6 6 18M6 6l12 12"/>',
@@ -539,7 +546,7 @@ const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'
 const ls={get:k=>{try{return localStorage.getItem(k)}catch(e){return null}},set:(k,v)=>{try{localStorage.setItem(k,v)}catch(e){}}};
 
 /* ---------- preferences (kept on this phone only) ---------- */
-const DEFAULTS={solid:false,sq:'medium',theme:'system',live:true,mutePc:false,lvol:1,ltarget:0.08,haptics:true,natural:true,tap:true,accel:true,speed:1.6,tabs:true,backdrop:true,scope:'here',lastTab:'pad'};
+const DEFAULTS={solid:false,sq:'medium',theme:'system',live:true,mutePc:false,lvol:1,ltarget:0.08,haptics:true,natural:true,tap:true,accel:true,speed:1.6,tabs:true,backdrop:true,scope:'here',lastTab:'pad',follow:false};
 const prefs=(()=>{try{return Object.assign({},DEFAULTS,JSON.parse(ls.get('zenvy.prefs')||'{}'))}catch(e){return Object.assign({},DEFAULTS)}})();
 const savePrefs=()=>ls.set('zenvy.prefs',JSON.stringify(prefs));
 const buzz=()=>{if(prefs.haptics){try{navigator.vibrate&&navigator.vibrate(6)}catch(e){}}};
@@ -789,6 +796,7 @@ function renderDesk(){
           else if(prefs.tabs&&isBrowser&&!browser.browsers.length)chip='<button class="tabsbtn'+(setupOpen?' on':'')+'" data-tabsetup="1">Tabs</button>';
           const extra=open?tabsPanel(bw,w):(setupOpen&&isBrowser&&!browser.browsers.length?SETUP:'');
           return '<div class="li'+(w.address===state.active_window?' act':'')+'"><button class="li-main" data-focus="'+esc(w.address)+'">'+avatarFor(w.class,nice(w.class))+'<span class="li-txt"><b>'+esc(w.title||nice(w.class))+'</b><small>'+esc(nice(w.class))+(w.floating?' · floating':'')+'</small></span></button>'+chip+
+          '<button class="ibtn mv" data-move="'+esc(w.address)+'" aria-label="Move to another workspace">'+ic('moveto')+'</button>'+
           '<button class="ibtn x'+(armed===w.address?' arm':'')+'" data-close="'+esc(w.address)+'" aria-label="'+(armed===w.address?'Tap again to close this window':'Close window')+'">'+(armed===w.address?'<span class="armc">'+ic('trash')+'</span>':ic('x'))+'</button></div>'+extra}).join('')+'</div>';
       }
     }
@@ -808,6 +816,7 @@ function renderDesk(){
   d.querySelectorAll('[data-close]').forEach(b=>b.onclick=()=>{const a=b.dataset.close;
     if(armed===a){armed=null;buzz();send('c'+a,{cmd:'close_window',address:a})}
     else{armed=a;renderDesk();setTimeout(()=>{if(armed===a){armed=null;renderDesk()}},3000)}});
+  d.querySelectorAll('[data-move]').forEach(b=>b.onclick=()=>{buzz();openMove(b.dataset.move)});
   d.querySelectorAll('[data-scope]').forEach(b=>b.onclick=()=>{buzz();prefs.scope=b.dataset.scope;savePrefs();renderDesk()});
   d.querySelectorAll('[data-tabs]').forEach(b=>b.onclick=()=>{buzz();const k=b.dataset.tabs;openTabs.has(k)?openTabs.delete(k):openTabs.add(k);saveOpen();renderDesk()});
   d.querySelectorAll('[data-tabsetup]').forEach(b=>b.onclick=()=>{buzz();setupOpen=!setupOpen;renderDesk()});
@@ -1081,6 +1090,17 @@ function openApps(where){
     renderAppList();
   });
 }
+/* ---------- move a window to another workspace ---------- */
+let moveWin='';
+function openMove(address){moveWin=address;openSheet('move')}
+function moveTo(ws){
+  const address=moveWin;pwrErr='';
+  rpc('cmd',{cmd:'move_window_to_workspace',address,workspace:ws},r=>{
+    if(r.t!=='ack'){pwrErr=(r.data&&r.data.message)||'It did not move';renderSheet();return}
+    const done=()=>{closeSheet(true);snack('Moved to workspace '+ws)};
+    if(prefs.follow)rpc('cmd',{cmd:'switch_workspace',id:ws},()=>done());else done();
+  });
+}
 function openSheet(v){pwrView=v;pwrErr='';pwrBusy=false;$('scrim').hidden=false;$('sheet').hidden=false;renderSheet();if(v==='unlock')setTimeout(()=>{const p=$('pw');if(p)p.focus()},120)}
 function closeSheet(force){if(pwrView==='count'&&!force)return;pwrView=null;clearInterval(pwrTimer);$('scrim').hidden=true;$('sheet').hidden=true;$('sheet-body').innerHTML=''}
 function startPwrTimer(){clearInterval(pwrTimer);pwrTimer=setInterval(tickPwr,250);tickPwr()}
@@ -1153,6 +1173,17 @@ function renderSheet(){
       '<div class="segb" id="ap-tg" role="group" aria-label="Where to open it"><button data-w="empty" class="'+(appWs==='empty'?'on':'')+'">New workspace '+nw+'</button><button data-w="here" class="'+(appWs==='here'?'on':'')+'">This workspace</button></div>'+
       '<div class="pass ap-s"><input id="ap-q" type="search" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="search" placeholder="Search apps" aria-label="Search apps" value="'+esc(appQ)+'"></div>'+
       '<div class="serr" id="ap-err"></div><div class="ap-list" id="ap-list"></div><button class="sbtn2" id="scancel">Close</button>';
+  }else if(pwrView==='move'){
+    const w=state&&state.windows.find(x=>x.address===moveWin);
+    if(!w){h='<h3 class="stitle">Move window</h3><div class="ssub">That window is gone</div><button class="sbtn2" id="scancel">Close</button>'}
+    else{
+      const cur=w.workspace,nw=newWorkspaceId();
+      const list=state.workspaces.filter(x=>x.id>0).sort((a,b)=>a.id-b.id);
+      h='<h3 class="stitle">Move to workspace</h3><div class="ssub">'+esc((w.title||nice(w.class)).slice(0,60))+'</div>'+
+        '<div class="mvgrid">'+list.map(x=>'<button class="wsb'+(x.id===cur?' cur':'')+(x.windows?'':' empty')+'" data-mvto="'+x.id+'"'+(x.id===cur?' disabled aria-label="Workspace '+x.id+', it is here now"':' aria-label="Workspace '+x.id+'"')+'><b>'+x.id+'</b><span class="wd">'+'<i></i>'.repeat(Math.min(x.windows,4))+'</span></button>').join('')+
+        (list.some(x=>x.id===nw)?'':'<button class="wsb new" data-mvto="'+nw+'" aria-label="New workspace '+nw+'">'+ic('plus','s')+'<b>'+nw+'</b></button>')+'</div>'+
+        '<label class="set-row">'+ic('moveto')+'<span class="li-txt"><b>Go there too</b></span><input type="checkbox" class="sw" id="mv-follow"'+(prefs.follow?' checked':'')+'></label>'+err+'<button class="sbtn2" id="scancel">Cancel</button>';
+    }
   }else if(pwrView==='unlock'){
     h='<div class="sbig">'+ic('lock')+'</div><h3 class="stitle">PC locked</h3><div class="ssub">Type the password for this PC</div>'+
       '<div class="pass">'+ic('lock','s')+'<input id="pw" type="password" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="go" name="zv'+Math.random().toString(36).slice(2,8)+'" placeholder="Password"'+(pwrBusy?' disabled':'')+'></div>'+err+
@@ -1166,6 +1197,10 @@ function renderSheet(){
   const ub=$('unl');if(ub)ub.onclick=()=>{buzz();doUnlock()};
   const sc2=$('sh-clip');if(sc2)sc2.onclick=()=>{buzz();const t=shareText.trim().slice(0,12000);closeSheet();rpc('clipboard',{cmd:'set',text:t},r=>{if(r.t==='ack'){clipSnip=t.slice(0,120);snack('Sent to the PC clipboard')}else snack(clipMsg(r))})};
   const so=$('sh-open');if(so)so.onclick=()=>{buzz();const u=asLink(shareText);closeSheet();if(u)openOnPc(u)};
+  if(pwrView==='move'){
+    const f=$('mv-follow');if(f)f.onchange=()=>{prefs.follow=f.checked;savePrefs()};
+    el.querySelectorAll('[data-mvto]').forEach(b=>b.onclick=()=>{buzz();moveTo(+b.dataset.mvto)});
+  }
   if(pwrView==='apps'){
     el.querySelectorAll('[data-w]').forEach(b=>b.onclick=()=>{buzz();appWs=b.dataset.w;el.querySelectorAll('[data-w]').forEach(x=>x.classList.toggle('on',x===b));renderAppSub()});
     const q=$('ap-q');q.oninput=()=>{appQ=q.value;renderAppList()};
