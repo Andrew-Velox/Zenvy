@@ -43,8 +43,8 @@ Run `zenvyd browser setup` and follow the steps to load `browser-extension/` in 
 | Desk | workspaces, windows (focus, close, move, float), browser tabs, custom actions, **open an installed app here or on a new empty workspace** (the `+` chip), **move a window to another workspace** (the arrow on each window) | `view`, `windows`, `exec`, `launch` |
 | Touchpad | pointer, scroll, clicks, drag, typing | `input` |
 | Keyboard | keys, shortcuts, live typing, clipboard to and from the PC, send and receive files, links | `input`, `clipboard`, `files` |
-| Media | player controls, volume, brightness, **phone speaker** (the PC's sound played on the phone) | `system`, `listen` |
-| Screen | live preview of a monitor; tap to click, double-tap to double-click, hold to right-click | `screen` (+ `input` to click) |
+| Media | player controls, volume, **phone speaker** (the PC's sound played on the phone) | `system`, `listen` |
+| Screen | **monitor brightness**; live preview of a monitor (a floating, draggable window on the other tabs); tap to click, double-tap to double-click, hold to right-click | `system` (brightness), `screen` (+ `input` to click) |
 | Power / lock | lock, sleep, restart, power off (confirm + countdown), type the password on the lock screen | `power`, `unlock` |
 
 A newly paired phone only gets `view`, `input`, `windows` and `system`. Everything that reads, plays or sends something from your PC is a separate permission you give on the PC:

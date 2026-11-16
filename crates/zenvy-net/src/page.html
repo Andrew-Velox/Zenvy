@@ -116,7 +116,8 @@ h2:first-child{margin-top:8px}
 .tx{flex:none;width:48px;height:56px;display:grid;place-items:center;color:var(--on-surface-v)}.tx.arm{color:var(--error)}
 .newtab{display:flex;align-items:center;gap:12px;width:100%;height:52px;padding:0 20px;border-top:1px solid var(--outline-v);color:var(--primary-ink);font-size:14px;font-weight:500}
 /* icon-led rows */
-#m-listen,#m-audio,#m-bright{margin-top:12px}#m-audio .card+.card{margin-top:12px}
+#m-listen,#m-audio{margin-top:12px}
+#sc-bright{flex:none;margin-bottom:8px}#m-audio .card+.card{margin-top:12px}
 .lead{flex:none;width:40px;height:40px;border-radius:20px;background:var(--surface-highest);color:var(--on-surface-v);display:grid;place-items:center}
 .lead.on{background:var(--primary-c);color:var(--on-primary-c)}
 .slrow{display:flex;align-items:center;gap:12px;min-height:64px;padding:8px 16px;border-top:1px solid var(--outline-v)}
@@ -470,8 +471,8 @@ button:focus-visible,.sw:focus-visible{outline-offset:-2px}
     <h2>Shortcuts</h2><div class="keys r3" id="k-sc"></div>
     <div id="k-clipwrap" hidden><h2>Share</h2><div id="k-clip"></div><input type="file" id="filepick" multiple hidden></div>
   </section>
-  <section class="view fill" id="v-screen" hidden><div id="sc-bar"></div><div id="sc-stage"><canvas id="sc-cv" hidden></canvas><span class="sc-stat" id="sc-stat" hidden></span><div id="sc-empty"></div></div></section>
-  <section class="view" id="v-media" hidden><div id="m-player"></div><div id="m-listen"></div><div id="m-audio"></div><div id="m-bright"></div></section>
+  <section class="view fill" id="v-screen" hidden><div id="sc-bright"></div><div id="sc-bar"></div><div id="sc-stage"><canvas id="sc-cv" hidden></canvas><span class="sc-stat" id="sc-stat" hidden></span><div id="sc-empty"></div></div></section>
+  <section class="view" id="v-media" hidden><div id="m-player"></div><div id="m-listen"></div><div id="m-audio"></div></section>
   <section class="view" id="v-lock" hidden><div class="lk"><div class="lk-clock" id="lk-clock"></div><div class="lk-pill" id="lk-pill"></div><div class="lk-cards" id="lk-cards"></div></div></section>
   <section class="view" id="v-settings" hidden></section>
 </main>
@@ -615,7 +616,7 @@ function gate(title,body,code,icon){
 }
 function buildNav(){
   const on=new Set((manifest||[]).filter(m=>m.enabled).map(m=>m.id));
-  const items=[['desk','Desk',true],['pad','Touchpad',on.has('touchpad')],['keys','Keyboard',on.has('keyboard')],['media','Media',on.has('media')||on.has('audio')||on.has('brightness')],['screen','Screen',!!(scr&&scr.enabled)]].filter(t=>t[2]);
+  const items=[['desk','Desk',true],['pad','Touchpad',on.has('touchpad')],['keys','Keyboard',on.has('keyboard')],['media','Media',on.has('media')||on.has('audio')],['screen','Screen',!!(scr&&scr.enabled)||on.has('brightness')]].filter(t=>t[2]);
   const sig=items.map(t=>t[0]).join();
   if(buildNav.sig!==sig||!$('nav').firstChild){buildNav.sig=sig;
     $('nav').innerHTML=items.map(t=>'<button data-tab="'+t[0]+'" aria-label="'+t[1]+'"><span class="pill">'+ic(t[0])+'</span><span>'+t[1]+'</span></button>').join('');
@@ -623,7 +624,7 @@ function buildNav(){
   $('nav').querySelectorAll('button').forEach(b=>{const on=b.dataset.tab===tab;b.classList.toggle('on',on);on?b.setAttribute('aria-current','page'):b.removeAttribute('aria-current')});
   if(!items.some(t=>t[0]===tab))tab='desk';
 }
-function setTab(t){if(isLocked()){showView('lock');renderLockScreen();return}tab=t;$('nav').querySelectorAll('button').forEach(b=>{const on=b.dataset.tab===t;b.classList.toggle('on',on);on?b.setAttribute('aria-current','page'):b.removeAttribute('aria-current')});prefs.lastTab=t;clearTimeout(setTab.st);setTab.st=setTimeout(savePrefs,400);showView(t);if(t==='media'){renderMedia();renderListen();renderAudio();renderBright();sendBright({cmd:'refresh'})}if(t==='keys')renderClip();if(t==='screen')renderScreen();renderWs();updateMini()}
+function setTab(t){if(isLocked()){showView('lock');renderLockScreen();return}tab=t;$('nav').querySelectorAll('button').forEach(b=>{const on=b.dataset.tab===t;b.classList.toggle('on',on);on?b.setAttribute('aria-current','page'):b.removeAttribute('aria-current')});prefs.lastTab=t;clearTimeout(setTab.st);setTab.st=setTimeout(savePrefs,400);showView(t);if(t==='media'){renderMedia();renderListen();renderAudio()}if(t==='screen'){renderBright();sendBright({cmd:'refresh'})}if(t==='keys')renderClip();if(t==='screen')renderScreen();renderWs();updateMini()}
 $('gear').innerHTML=ic('tune');$('back').innerHTML=ic('back');
 $('gear').onclick=()=>{buzz();renderSettings();showView('settings')};
 $('back').onclick=()=>{buzz();setTab(tab)};
@@ -660,7 +661,7 @@ async function connect(){
       const sig=await crypto.subtle.sign('Ed25519',dev.key,msg);
       ws.send(JSON.stringify({v:1,t:'auth',data:{device_id:dev.id,sig:b64u(sig)}}));
     }else if(m.t==='ready'){backoff=500;live('on','…');startPing()}
-    else if(m.t==='snapshot'){caps=m.data.capabilities;manifest=m.data.ui_manifest;state=m.data.desktop;browser=m.data.browser||{browsers:[]};audio=m.data.audio||null;media=m.data.media||null;bright=m.data.brightness||null;power=m.data.power||null;actions=m.data.actions||[];share=m.data.share||{clipboard:false,open_link:false};files=m.data.files||{enabled:false,offers:[]};scr=m.data.screen||{enabled:false};appsCfg=m.data.apps||{enabled:false};if(!scr.enabled&&scrOn)stopScreen(true);buildNav();mediaAt=Date.now();buildNav();renderPower();if(view==='gate')setTab(tab);else renderWs();renderDesk()}
+    else if(m.t==='snapshot'){caps=m.data.capabilities;manifest=m.data.ui_manifest;state=m.data.desktop;browser=m.data.browser||{browsers:[]};audio=m.data.audio||null;media=m.data.media||null;bright=m.data.brightness||null;power=m.data.power||null;actions=m.data.actions||[];share=m.data.share||{clipboard:false,open_link:false};files=m.data.files||{enabled:false,offers:[]};scr=m.data.screen||{enabled:false};appsCfg=m.data.apps||{enabled:false};if(!scr.enabled&&scrOn)stopScreen(true);buildNav();mediaAt=Date.now();buildNav();renderPower();if(view==='gate')setTab(tab);else renderWs();renderDesk();if(view==='screen'){renderBright();renderScreen()}}
     else if(m.t==='evt'&&m.data.topic==='desktop.state'){state=m.data.value;renderWs();renderDesk()}
     else if(m.t==='icon'){onIcon(m.data)}
     else if(m.t==='screen'){if(m.data&&m.data.state==='stopped'){stopScreen(true,m.data.reason||'')}}
@@ -671,7 +672,7 @@ async function connect(){
     else if(m.t==='listen'){if(m.data&&m.data.state==='stopped'){stopListenLocal(m.data.reason||'')}else if(m.data&&m.data.state==='started'){listenState='on';listenErr='';renderListen()}}
     else if(m.t==='err'&&m.id==='listen-start'){stopListenLocal('');listenErr=(m.data&&m.data.message)||'Could not start';renderListen()}
     else if(m.t==='evt'&&m.data.topic==='media.state'){media=m.data.value;mediaAt=Date.now();if(view==='media')renderMedia();if(view==='lock')renderLockScreen()}
-    else if(m.t==='evt'&&m.data.topic==='brightness.state'){bright=m.data.value;if(view==='media'&&!brDrag)renderBright();if(view==='lock'&&!brDrag)renderLockScreen()}
+    else if(m.t==='evt'&&m.data.topic==='brightness.state'){bright=m.data.value;if(view==='screen'&&!brDrag)renderBright();if(view==='lock'&&!brDrag)renderLockScreen()}
     else if(m.t==='evt'&&m.data.topic==='audio.state'){audio=m.data.value;if(view==='media'&&!volDrag)renderAudio();if(view==='lock'&&!volDrag)renderLockScreen()}
     else if(m.t==='evt'&&m.data.topic==='browser.tabs'){browser=m.data.value;renderDesk()}
     else if(m.t==='evt'&&m.data.topic==='capability.changed'){caps.capabilities[m.data.value.id]=m.data.value.record;if(view==='settings')renderSettings()}
@@ -884,7 +885,7 @@ function renderAudio(){
 }
 
 function renderBright(){
-  const el=$('m-bright');
+  const el=$('sc-bright');
   if(!bright||!bright.displays||!bright.displays.length){
     el.innerHTML=bright?'<div class="card"><div class="empty">'+ic('sun')+'<span>No adjustable screen (turn on DDC/CI on the monitor)</span></div></div>':'';return}
   const many=bright.displays.length>1;
@@ -1378,6 +1379,8 @@ function stopScreen(local,reason){
 }
 function renderScreen(){
   const bar=$('sc-bar'),em=$('sc-empty'),mons=monList();
+  // without screen capture the tab is just the brightness controls
+  const prev=!!(scr&&scr.enabled);bar.hidden=!prev;$('sc-stage').hidden=!prev;if(!prev)return;
   const q=[['low','Low'],['medium','Medium'],['high','High']];
   bar.innerHTML=(mons.length>1?'<div class="sc-row">'+'<div class="segb sm" id="sc-mons" role="group" aria-label="Monitor">'+mons.map(m=>'<button data-mon="'+esc(m.connector)+'" class="'+((scrMon||(mons.find(x=>x.focused)||mons[0]).connector)===m.connector?'on':'')+'" aria-label="'+esc(m.connector)+'">'+ic('desk','s')+esc(m.connector.replace(/-A-/,'-'))+'</button>').join('')+'</div></div>':'')+
     '<div class="sc-row"><div class="segb sm" id="sc-q" role="group" aria-label="Quality">'+q.map(x=>'<button data-q="'+x[0]+'" class="'+(prefs.sq===x[0]?'on':'')+'">'+x[1]+'</button>').join('')+'</div>'+
