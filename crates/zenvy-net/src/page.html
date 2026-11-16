@@ -673,7 +673,7 @@ function browserFor(w,allWins){
 }
 function tabsPanel(bw,w){
   const c=bw.conn.id,win=bw.win.id;
-  return '<div class="tabs">'+bw.win.tabs.map(tb=>{const k='t'+c+'-'+tb.id;
+  return '<div class="tabs" data-pk="'+c+'-'+win+'">'+bw.win.tabs.map(tb=>{const k='t'+c+'-'+tb.id;
     return '<div class="trow'+(tb.active?' act':'')+'"><button class="tmain" data-tab-act="'+c+'|'+win+'|'+tb.id+'|'+esc(w.address)+'">'+(favFor(tb.host)?'<span class="fav ico"><img src="'+favFor(tb.host)+'" alt="" draggable="false"></span>':'<span class="fav">'+esc((tb.host||tb.title||'?').charAt(0).toUpperCase())+'</span>')+'<span class="li-txt"><b>'+esc(tb.title||tb.host||'New tab')+'</b><small>'+esc(tb.host||'')+(tb.pinned?' · pinned':'')+(tb.audible?' · playing':'')+'</small></span></button>'+
     '<button class="tx'+(armed===k?' arm':'')+'" data-tab-close="'+c+'|'+tb.id+'" aria-label="Close tab">'+(armed===k?'Close?':ic('x','s'))+'</button></div>'}).join('')+
     '<button class="newtab" data-tab-new="'+c+'|'+win+'|'+esc(w.address)+'">'+ic('plus','s')+' New tab</button></div>';
@@ -706,8 +706,14 @@ function renderDesk(){
       }
     }
   }
-  const keep=$('v-desk').scrollTop;
+  // Nothing changed (most events do not touch what the Desk shows): leave the DOM alone, so a scroll in progress is never interrupted.
+  if(h===renderDesk.last&&$('v-desk').firstChild)return;
+  renderDesk.last=h;
+  // Keep the page's scroll position and the scroll position inside each open tab list (it scrolls on its own).
+  const keep=$('v-desk').scrollTop,inner={};
+  $('v-desk').querySelectorAll('.tabs[data-pk]').forEach(e=>{inner[e.dataset.pk]=e.scrollTop});
   $('v-desk').innerHTML=h;$('v-desk').scrollTop=keep;
+  $('v-desk').querySelectorAll('.tabs[data-pk]').forEach(e=>{if(inner[e.dataset.pk])e.scrollTop=inner[e.dataset.pk]});
   const d=$('v-desk');
   d.querySelectorAll('[data-focus]').forEach(b=>b.onclick=()=>{buzz();send('f'+b.dataset.focus,{cmd:'focus_window',address:b.dataset.focus})});
   d.querySelectorAll('[data-close]').forEach(b=>b.onclick=()=>{const a=b.dataset.close;
