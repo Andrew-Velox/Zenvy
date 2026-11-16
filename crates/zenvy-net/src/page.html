@@ -373,6 +373,12 @@ body.locked #top,body.locked #nav{display:none}
 /* close confirmation: the X becomes a red trash icon (no words); it reverts by itself after a few seconds */
 .armc{display:grid;place-items:center;width:36px;height:36px;border-radius:18px;background:rgba(255,69,58,.2);color:var(--error);box-shadow:inset 0 0 0 1px rgba(255,69,58,.35);animation:armpop .18s var(--ease)}
 @keyframes armpop{from{transform:scale(.6);opacity:.3}to{transform:none;opacity:1}}
+
+/* ---------- custom actions ---------- */
+.acts{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.actbtn{display:flex;align-items:center;gap:10px;height:52px;padding:0 14px;border-radius:18px;background:var(--fill-2);box-shadow:var(--rim-soft);text-align:left;font-size:15px;font-weight:500;color:var(--on-surface)}
+.actbtn span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.actbtn .i{color:var(--primary-ink)}
+.actbtn:active{background:var(--fill-3)}
 </style></head><body>
 <div id="backdrop" aria-hidden="true"><svg width="100%" height="100%" viewBox="0 0 400 800" preserveAspectRatio="xMidYMid slice"><defs><filter id="bdblur" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="46"/></filter></defs><g filter="url(#bdblur)"><circle cx="330" cy="110" r="150" style="fill:var(--bd-a);opacity:var(--bd-ao)"/><circle cx="20" cy="360" r="130" style="fill:var(--bd-b);opacity:var(--bd-bo)"/><circle cx="360" cy="560" r="120" style="fill:var(--bd-c);opacity:var(--bd-co)"/><circle cx="90" cy="740" r="150" style="fill:var(--bd-a);opacity:var(--bd-ao)"/></g></svg></div>
 <svg width="0" height="0" style="position:absolute" aria-hidden="true"><symbol id="zlogo" viewBox="-300 -300 600 600"><path fill="currentColor" fill-rule="evenodd" d="M-33.3 -223.6 L-32.1 -224.1 L-8.1 -224.1 L204.9 -224.1 L213.9 -223.8 L221.9 -222.0 L229.9 -218.9 L236.9 -215.0 L244.7 -208.6 L250.4 -202.6 L255.2 -195.6 L259.3 -187.6 L262.5 -177.6 L263.4 -171.6 L263.5 -162.6 L262.4 -153.6 L261.4 -149.6 L259.4 -143.6 L256.2 -136.6 L252.4 -130.6 L247.9 -124.9 L157.9 -32.2 L52.9 77.5 L46.9 82.6 L38.9 88.0 L30.9 91.8 L22.9 93.9 L14.9 94.7 L-47.1 95.5 L-47.7 94.4 L160.4 -115.6 L162.2 -118.6 L163.1 -121.6 L163.2 -125.6 L162.1 -128.6 L159.9 -131.0 L156.9 -132.8 L152.9 -133.6 L-122.6 -127.6 L-122.9 -128.6 L-119.3 -132.6ZM16.2 -71.6 L54.9 -72.3 L55.9 -72.2 L56.3 -71.6 L-158.5 146.4 L-159.3 147.4 L-159.1 147.8 L89.9 148.0 L91.0 147.4 L90.4 146.4 L69.4 122.4 L69.9 121.2 L249.9 117.7 L251.0 118.4 L250.2 119.4 L206.2 167.4 L159.9 217.4 L153.9 221.5 L147.9 223.7 L144.9 224.1 L-203.1 224.1 L-209.1 223.7 L-215.1 222.6 L-225.1 219.6 L-234.1 214.7 L-242.6 208.4 L-249.4 201.4 L-252.4 197.4 L-257.6 188.4 L-261.4 178.4 L-262.5 173.4 L-263.5 164.4 L-263.4 159.4 L-262.4 152.4 L-260.3 144.4 L-256.3 135.4 L-252.5 129.4 L-249.1 125.0 L-87.9 -39.6 L-75.1 -50.9 L-66.1 -57.1 L-55.1 -63.0 L-47.1 -66.1 L-37.1 -69.0 L-24.1 -70.9Z"/><path style="fill:var(--logo-accent)" d="M-131.6 -222.6 L-66.1 -223.4 L-64.8 -222.6 L-143.9 -137.6 L-150.1 -131.5 L-155.1 -128.4 L-158.1 -127.3 L-161.1 -126.9 L-260.5 -124.6 L-260.3 -125.6 L-181.1 -210.9 L-173.1 -219.0 L-168.1 -221.7 L-165.1 -222.4Z"/></symbol></svg>
@@ -574,7 +580,7 @@ async function connect(){
       const sig=await crypto.subtle.sign('Ed25519',dev.key,msg);
       ws.send(JSON.stringify({v:1,t:'auth',data:{device_id:dev.id,sig:b64u(sig)}}));
     }else if(m.t==='ready'){backoff=500;live('on','…');startPing()}
-    else if(m.t==='snapshot'){caps=m.data.capabilities;manifest=m.data.ui_manifest;state=m.data.desktop;browser=m.data.browser||{browsers:[]};audio=m.data.audio||null;media=m.data.media||null;bright=m.data.brightness||null;power=m.data.power||null;mediaAt=Date.now();buildNav();renderPower();if(view==='gate')setTab(tab);else renderWs();renderDesk()}
+    else if(m.t==='snapshot'){caps=m.data.capabilities;manifest=m.data.ui_manifest;state=m.data.desktop;browser=m.data.browser||{browsers:[]};audio=m.data.audio||null;media=m.data.media||null;bright=m.data.brightness||null;power=m.data.power||null;actions=m.data.actions||[];mediaAt=Date.now();buildNav();renderPower();if(view==='gate')setTab(tab);else renderWs();renderDesk()}
     else if(m.t==='evt'&&m.data.topic==='desktop.state'){state=m.data.value;renderWs();renderDesk()}
     else if(m.t==='icon'){onIcon(m.data)}
     else if(m.t==='favicon'){onFavicon(m.data)}
@@ -711,6 +717,7 @@ function renderDesk(){
       }
     }
   }
+  h+=actionsHtml();
   // Nothing changed (most events do not touch what the Desk shows): leave the DOM alone, so a scroll in progress is never interrupted.
   if(h===renderDesk.last&&$('v-desk').firstChild)return;
   renderDesk.last=h;
@@ -720,6 +727,7 @@ function renderDesk(){
   $('v-desk').innerHTML=h;$('v-desk').scrollTop=keep;
   $('v-desk').querySelectorAll('.tabs[data-pk]').forEach(e=>{if(inner[e.dataset.pk])e.scrollTop=inner[e.dataset.pk]});
   const d=$('v-desk');
+  bindActions(d);
   d.querySelectorAll('[data-focus]').forEach(b=>b.onclick=()=>{buzz();send('f'+b.dataset.focus,{cmd:'focus_window',address:b.dataset.focus})});
   d.querySelectorAll('[data-close]').forEach(b=>b.onclick=()=>{const a=b.dataset.close;
     if(armed===a){armed=null;buzz();send('c'+a,{cmd:'close_window',address:a})}
@@ -877,7 +885,7 @@ function renderListen(){
 
 
 /* ---------- power: the lock banner and the power sheet ---------- */
-let power=null,pwrSched=null,pwrView=null,pwrAction=null,pwrErr='',pwrBusy=false,pwrTimer=0;
+let actions=[],power=null,pwrSched=null,pwrView=null,pwrAction=null,pwrErr='',pwrBusy=false,pwrTimer=0;
 const rpcCbs={};
 function rpc(type,data,cb){
   const id='pw-'+Math.random().toString(36).slice(2,8);
@@ -986,6 +994,14 @@ function doLock(){
 }
 function doConfirmed(){
   const action=pwrAction;pwrBusy=true;pwrErr='';renderSheet();
+  if(action.startsWith('act:')){ // a custom action that asked for confirmation
+    const aid=action.slice(4);
+    rpc('action',{cmd:'run',id:aid},r=>{
+      if(r.t!=='action'){pwrFail(r);return}
+      rpc('action',{cmd:'confirm',token:r.data.token},r2=>{if(r2.t==='ack'){closeSheet();snack('Done')}else pwrFail(r2)});
+    });
+    return;
+  }
   rpc('power',{cmd:'request',action},r=>{
     if(r.t!=='power'){pwrFail(r);return}
     rpc('power',{cmd:'confirm',token:r.data.token},r2=>{
@@ -1047,6 +1063,19 @@ function onPowerEvent(topic,v){
   return false;
 }
 
+/* ---------- custom actions (from the PC's config) ---------- */
+const actIcon=a=>(a.icon&&ICONS[a.icon])?a.icon:'zap';
+function actionsHtml(){
+  if(!actions.length)return '';
+  return '<h2>Actions</h2><div class="acts">'+actions.map(a=>'<button class="actbtn" data-act="'+esc(a.id)+'">'+ic(actIcon(a))+'<span>'+esc(a.label)+'</span></button>').join('')+'</div>';
+}
+function bindActions(root){
+  root.querySelectorAll('[data-act]').forEach(b=>b.onclick=()=>{
+    buzz();const a=actions.find(x=>x.id===b.dataset.act);if(!a)return;
+    if(a.confirm){PWR['act:'+a.id]={icon:actIcon(a),label:a.label,q:a.label+'?'};pwrAction='act:'+a.id;openSheet('confirm');return}
+    rpc('action',{cmd:'run',id:a.id},r=>{if(r.t==='ack')snack(a.label+': done');else snack((r.data&&r.data.message)||'It did not work')});
+  });
+}
 /* ---------- settings ---------- */
 function renderSettings(){
   const sw=(id,icon,label,val)=>'<label class="set-row">'+ic(icon)+'<span class="li-txt"><b>'+label+'</b></span><input type="checkbox" class="sw" id="'+id+'"'+(val?' checked':'')+'></label>';
@@ -1235,6 +1264,7 @@ tab=prefs.lastTab||'pad';
       if(v==='tabs'){openTabs.add('1:1');prefs.scope='here'}
       if(v==='all')prefs.scope='all';
       if(v==='gate'){gate('Approve on your PC','Match this code, then tap Approve.','4821','shield');return}
+      actions=[{id:'lights',label:'Lights off',icon:'sun',confirm:false},{id:'backup',label:'Back up now',icon:'copy',confirm:true},{id:'vpn',label:'Toggle VPN',icon:'globe',confirm:false},{id:'reboot-router',label:'Restart router',icon:'restart',confirm:true}];
       buildNav();renderDesk();
       if(v==='power'||v==='lock'||v==='unlock'||v==='confirm'||v==='count'||v==='lockmode'){setTab('desk');if(v==='power')openSheet('menu');if(v==='unlock')openSheet('unlock');if(v==='confirm'){pwrAction='poweroff';openSheet('confirm')}if(v==='count'){pwrAction='suspend';pwrSched={id:'x',action:'suspend',until:Date.now()+3000,by:'My phone'};openSheet('count');startPwrTimer()}renderPower();return}
       if(v==='settings'){tab='pad';renderSettings();showView('settings');return}

@@ -38,6 +38,8 @@ pub struct NetConfig {
     /// `host:port` values the Host header may carry (DNS-rebinding defence).
     pub allowed_hosts: Vec<String>,
     pub features: BTreeMap<String, bool>,
+    /// Custom actions from the config (the argument vectors stay here).
+    pub actions: Vec<crate::actions::ActionDef>,
 }
 
 pub struct App {

@@ -186,6 +186,8 @@ struct Ctx {
     muting: bool,
     /// A suspend/reboot/power-off this phone asked for and has not confirmed yet: (token, action, deadline).
     power_pending: Option<(String, zenvy_proto::PowerAction, std::time::Instant)>,
+    /// A confirm-first action this phone asked for: (token, action id, deadline).
+    action_pending: Option<(String, String, std::time::Instant)>,
 }
 
 async fn session(app: Arc<App>, ip: IpAddr, mut s: WebSocket) {
@@ -207,6 +209,7 @@ async fn session(app: Arc<App>, ip: IpAddr, mut s: WebSocket) {
         listener: None,
         muting: false,
         power_pending: None,
+        action_pending: None,
     };
     // Subscribe before taking the snapshot so no event can fall between the two.
     let mut hub = app.hub.subscribe();
@@ -328,7 +331,12 @@ async fn handle(app: &Arc<App>, ctx: &mut Ctx, m: Msg) -> (Option<Value>, bool) 
     };
     let ack = || json!({ "v": 1, "t": "ack", "id": id, "data": { "ok": true } });
     // A locked PC: no windows, no keyboard or mouse, no browser tabs. Media, volume, brightness, power and unlock still work.
-    if app.is_locked() && matches!(m.t.as_str(), "cmd" | "input" | "browser" | "favicon") {
+    if app.is_locked()
+        && matches!(
+            m.t.as_str(),
+            "cmd" | "input" | "browser" | "favicon" | "action"
+        )
+    {
         return err("pc_locked", "The PC is locked. Unlock it first.", false);
     }
     match m.t.as_str() {
@@ -446,6 +454,66 @@ async fn handle(app: &Arc<App>, ctx: &mut Ctx, m: Msg) -> (Option<Value>, bool) 
                 Some(json!({ "v": 1, "t": "icon", "id": id, "data": data })),
                 false,
             )
+        }
+        "action" => {
+            // Custom actions from the config. The phone sends an id; the command line never leaves the agent.
+            if !ctx.scopes.contains("exec") {
+                return err(
+                    "forbidden",
+                    &format!(
+                        "This phone may not run actions yet. On the PC run: zenvyd grant {} exec",
+                        ctx.device_id
+                    ),
+                    false,
+                );
+            }
+            let cmd = m.data.get("cmd").and_then(Value::as_str).unwrap_or("");
+            let find = |id: &str| app.cfg.actions.iter().find(|a| a.id == id).cloned();
+            match cmd {
+                "run" => {
+                    let aid = m.data.get("id").and_then(Value::as_str).unwrap_or("");
+                    let Some(a) = find(aid) else {
+                        return err("unknown_action", "no such action", false);
+                    };
+                    if a.confirm {
+                        let token = crate::power::hex_token();
+                        ctx.action_pending = Some((
+                            token.clone(),
+                            a.id.clone(),
+                            std::time::Instant::now() + crate::power::CONFIRM_WINDOW,
+                        ));
+                        return (
+                            Some(
+                                json!({ "v": 1, "t": "action", "id": id, "data": { "state": "pending", "token": token, "expires_ms": crate::power::CONFIRM_WINDOW.as_millis() as u64 } }),
+                            ),
+                            false,
+                        );
+                    }
+                    app.audit.record("action_run", Some(&ctx.device_id), &a.id);
+                    match crate::actions::run(&a).await {
+                        Ok(()) => (Some(ack()), false),
+                        Err(e) => err("failed", &e, false),
+                    }
+                }
+                "confirm" => {
+                    let token = m.data.get("token").and_then(Value::as_str).unwrap_or("");
+                    let Some((want, aid, deadline)) = ctx.action_pending.take() else {
+                        return err("not_pending", "nothing is waiting for confirmation", false);
+                    };
+                    if want != token || std::time::Instant::now() > deadline {
+                        return err("not_pending", "that confirmation has expired", false);
+                    }
+                    let Some(a) = find(&aid) else {
+                        return err("unknown_action", "no such action", false);
+                    };
+                    app.audit.record("action_run", Some(&ctx.device_id), &a.id);
+                    match crate::actions::run(&a).await {
+                        Ok(()) => (Some(ack()), false),
+                        Err(e) => err("failed", &e, false),
+                    }
+                }
+                _ => err("invalid_command", "unknown action command", true),
+            }
         }
         "power" => {
             let cmd: PowerCommand = match serde_json::from_value(m.data) {

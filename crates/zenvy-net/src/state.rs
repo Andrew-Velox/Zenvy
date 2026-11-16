@@ -81,6 +81,7 @@ pub async fn snapshot(app: &App) -> Value {
         "media": media_state(app).await,
         "brightness": brightness_state(app),
         "power": power_state(app).await,
+        "actions": crate::actions::public_view(&app.cfg.actions),
     })
 }
 

@@ -513,6 +513,33 @@ else {
     ci.ws.close(); }
 
 
+
+  console.log('-- custom actions (config-defined fixed commands)');
+  { const FD = process.env.ZENVY_FAKE_DIR, mark = `${FD}/action-mark`, danger = `${FD}/action-danger`;
+    for (const f of [mark, danger]) { try { fsx.unlinkSync(f); } catch {} }
+    const ca = await wsConnect(phone, dev); const snapA = await ca.until(m => m.t === 'snapshot');
+    const ask = async (id, data) => { ca.send({ t: 'action', id, data }); return ca.until(m => m.id === id); };
+    const au = () => (process.env.ZENVY_AUDIT && fsx.existsSync(process.env.ZENVY_AUDIT)) ? fsx.readFileSync(process.env.ZENVY_AUDIT, 'utf8') : '';
+    const acts = snapA.data.actions;
+    ok(Array.isArray(acts) && acts.map(a => a.id).join() === 'mark,danger,broken' && acts[1].confirm === true, 'the phone is told the configured actions (id, label, confirm)');
+    ok(!JSON.stringify(acts).includes('touch') && !JSON.stringify(snapA.data).includes('action-mark'), 'the command line and paths never reach the phone');
+    const no = await ask('a0', { cmd: 'run', id: 'mark' });
+    ok(no?.t === 'err' && no.data.code === 'forbidden' && no.data.message.includes(`zenvyd grant ${dev} exec`) && !fsx.existsSync(mark), 'without the exec permission nothing runs and the grant command is shown');
+    await admin({ op: 'grant', id: dev, scope: 'exec' }); await sleep(300);
+    ok((await ask('a1', { cmd: 'run', id: 'mark' }))?.t === 'ack' && fsx.existsSync(mark), 'an action runs its fixed command');
+    ok((await ask('a2', { cmd: 'run', id: 'nope' }))?.data.code === 'unknown_action', 'an unknown id is refused');
+    ok((await ask('a3', { cmd: 'run', id: 'mark; rm -rf /' }))?.data.code === 'unknown_action', 'an id is only ever looked up, never executed');
+    const pend = await ask('a4', { cmd: 'run', id: 'danger' });
+    ok(pend?.t === 'action' && pend.data.state === 'pending' && /^[0-9a-f]{24}$/.test(pend.data.token) && !fsx.existsSync(danger), 'a confirm action asks first and has not run yet');
+    ok((await ask('a5', { cmd: 'confirm', token: 'deadbeefdeadbeefdeadbeef' }))?.data.code === 'not_pending' && !fsx.existsSync(danger), 'a wrong token does not confirm');
+    const pend2 = await ask('a6', { cmd: 'run', id: 'danger' });
+    ok((await ask('a7', { cmd: 'confirm', token: pend2.data.token }))?.t === 'ack' && fsx.existsSync(danger), 'the right token runs it');
+    const br = await ask('a8', { cmd: 'run', id: 'broken' });
+    ok(br?.t === 'err' && br.data.code === 'failed' && /exited with 1/.test(br.data.message), 'a failing command is reported briefly');
+    ok((await ask('a9', { cmd: 'zap' }))?.data.code === 'invalid_command', 'an unknown action command is rejected');
+    ok(au().includes('"action_run"') && au().includes('mark') && !au().includes('touch') && !au().includes('action-mark'), 'runs are audit-logged by id, never by command line');
+    ca.ws.close(); }
+
   console.log('-- power and lock (fake systemctl/loginctl: nothing real is ever suspended, restarted or locked)');
   { const FD = process.env.ZENVY_FAKE_DIR;
     const plogPath = `${FD}/power.log`, lockedPath = `${FD}/locked`;
@@ -541,7 +568,7 @@ else {
     const cl = await wsConnect(phone, dev); const snapL = await cl.until(m => m.t === 'snapshot');
     ok(snapL.data.power.lock === 'locked' && snapL.data.desktop.windows.length === 0 && snapL.data.desktop.workspaces.length === 0 && snapL.data.browser.browsers.length === 0, 'a phone that connects while the PC is locked is sent no windows, workspaces or tabs');
     const asked = async (type, id, data) => { cl.send({ t: type, id, data }); return cl.until(m => m.id === id); };
-    for (const [type, id, data, why] of [['cmd', 'lk1', { cmd: 'switch_workspace', id: 1 }, 'switching workspaces'], ['input', 'lk2', { cmd: 'pointer_move', dx: 0, dy: 0 }, 'the pointer'], ['browser', 'lk3', { cmd: 'close_tab', browser: 1, tab: 1 }, 'closing browser tabs'], ['favicon', 'lk7', { host: 'docs.rs' }, 'site icons']]) {
+    for (const [type, id, data, why] of [['cmd', 'lk1', { cmd: 'switch_workspace', id: 1 }, 'switching workspaces'], ['input', 'lk2', { cmd: 'pointer_move', dx: 0, dy: 0 }, 'the pointer'], ['browser', 'lk3', { cmd: 'close_tab', browser: 1, tab: 1 }, 'closing browser tabs'], ['favicon', 'lk7', { host: 'docs.rs' }, 'site icons'], ['action', 'lk8', { cmd: 'run', id: 'mark' }, 'custom actions']]) {
       const r = await asked(type, id, data); ok(r?.t === 'err' && r.data.code === 'pc_locked', `refused while locked: ${why}`);
     }
     ok((await asked('audio', 'lk4', { cmd: 'set_volume', percent: 33 }))?.t === 'ack', 'volume still works while locked');

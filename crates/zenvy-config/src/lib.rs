@@ -78,6 +78,9 @@ pub struct Action {
     pub argv: Vec<String>,
     #[serde(default)]
     pub confirm: bool,
+    /// Optional icon name from the phone's icon set (unknown names fall back to a generic one).
+    #[serde(default)]
+    pub icon: Option<String>,
 }
 
 /// Lock screen detection and the power sheet.
@@ -199,15 +202,62 @@ pub fn parse(text: &str) -> Result<Loaded, ConfigError> {
             "allow_remote = true requires explicit bind addresses (e.g. the tailscale0 address), not 'auto' or a wildcard".into(),
         ));
     }
-    for a in &config.actions {
-        if a.argv.is_empty() || a.id.is_empty() {
-            return Err(ConfigError::Invalid(format!(
-                "action '{}' needs an id and a non-empty argv",
+    validate_actions(&config.actions)?;
+    Ok(Loaded { config, warnings })
+}
+
+/// Actions are the one place the config makes the agent run a program, so they are checked hard: a plain id, a short
+/// label, and an argument vector (never a shell string) of bounded size.
+pub fn validate_actions(actions: &[Action]) -> Result<(), ConfigError> {
+    let bad = |m: String| Err(ConfigError::Invalid(m));
+    if actions.len() > 24 {
+        return bad("at most 24 actions are supported".into());
+    }
+    let mut seen = std::collections::BTreeSet::new();
+    for a in actions {
+        if a.id.is_empty()
+            || a.id.len() > 32
+            || !a
+                .id
+                .chars()
+                .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_' || c == '-')
+        {
+            return bad(format!(
+                "action id '{}' must be 1-32 characters of a-z 0-9 _ -",
                 a.id
-            )));
+            ));
+        }
+        if !seen.insert(a.id.clone()) {
+            return bad(format!("action id '{}' is used twice", a.id));
+        }
+        if a.label.trim().is_empty()
+            || a.label.chars().count() > 40
+            || a.label.chars().any(char::is_control)
+        {
+            return bad(format!(
+                "action '{}' needs a label of 1-40 printable characters",
+                a.id
+            ));
+        }
+        if a.argv.is_empty()
+            || a.argv.len() > 32
+            || a.argv.iter().any(|x| x.len() > 512 || x.contains('\0'))
+            || a.argv[0].is_empty()
+        {
+            return bad(format!("action '{}' needs an argv of 1-32 arguments (a program and its arguments, not a shell line)", a.id));
+        }
+        if let Some(i) = &a.icon {
+            if i.is_empty()
+                || i.len() > 24
+                || !i
+                    .chars()
+                    .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
+            {
+                return bad(format!("action '{}' has an invalid icon name", a.id));
+            }
         }
     }
-    Ok(Loaded { config, warnings })
+    Ok(())
 }
 
 /// Missing file => defaults (not an error).
@@ -293,5 +343,80 @@ argv = ["loginctl", "lock-session"]
     #[test]
     fn actions_need_argv() {
         assert!(parse("[[actions]]\nid=\"x\"\nlabel=\"x\"\nargv=[]\n").is_err());
+    }
+
+    #[test]
+    fn actions_are_validated_strictly() {
+        let ok = r#"[[actions]]
+id = "lights"
+label = "Lights off"
+argv = ["/usr/bin/true", "--arg"]
+confirm = true
+icon = "zap"
+"#;
+        let l = parse(ok).unwrap();
+        assert_eq!(l.config.actions[0].icon.as_deref(), Some("zap"));
+        for (why, body) in [
+            (
+                "an id with a space",
+                r#"[[actions]]
+id = "a b"
+label = "x"
+argv = ["x"]"#,
+            ),
+            (
+                "an upper-case id",
+                r#"[[actions]]
+id = "Lights"
+label = "x"
+argv = ["x"]"#,
+            ),
+            (
+                "no argv",
+                r#"[[actions]]
+id = "a"
+label = "x"
+argv = []"#,
+            ),
+            (
+                "an empty program",
+                r#"[[actions]]
+id = "a"
+label = "x"
+argv = [""]"#,
+            ),
+            (
+                "no label",
+                r#"[[actions]]
+id = "a"
+label = "  "
+argv = ["x"]"#,
+            ),
+            (
+                "a control character in the label",
+                "[[actions]]\nid = \"a\"\nlabel = \"x\\u0007\"\nargv = [\"x\"]",
+            ),
+            (
+                "an icon with a slash",
+                r#"[[actions]]
+id = "a"
+label = "x"
+argv = ["x"]
+icon = "../x""#,
+            ),
+            (
+                "a duplicate id",
+                r#"[[actions]]
+id = "a"
+label = "x"
+argv = ["x"]
+[[actions]]
+id = "a"
+label = "y"
+argv = ["y"]"#,
+            ),
+        ] {
+            assert!(matches!(parse(body), Err(ConfigError::Invalid(_))), "{why}");
+        }
     }
 }

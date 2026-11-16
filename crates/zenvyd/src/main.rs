@@ -716,7 +716,24 @@ async fn serve_cmd() -> Result<(), Box<dyn std::error::Error>> {
         max_devices: cfg.security.max_devices,
         allowed_hosts: hosts,
         features: cfg.features.clone(),
+        actions: cfg
+            .actions
+            .iter()
+            .map(|a| zenvy_net::ActionDef {
+                id: a.id.clone(),
+                label: a.label.clone(),
+                icon: a.icon.clone(),
+                confirm: a.confirm,
+                argv: a.argv.clone(),
+            })
+            .collect(),
     };
+    if !cfg.actions.is_empty() {
+        eprintln!(
+            "custom actions: {} configured; phones need the 'exec' permission (zenvyd grant <id> exec)",
+            cfg.actions.len()
+        );
+    }
     let input = build_input(&sc.registry).await;
     let audio = build_audio(&sc);
     let media = build_media(&sc.registry).await;

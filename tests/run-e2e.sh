@@ -28,6 +28,23 @@ for f in loginctl systemctl busctl; do cp "$ROOT/tests/fakes/$f" "$TMP/bin/$f"; 
 cp "$ROOT/tests/fakes/parec" "$TMP/bin/parec"; cp "$ROOT/tests/fakes/notify-send" "$TMP/bin/notify-send"
 echo '{"ddc":[{"bus":2,"connector":"card1-HDMI-A-1","model":"Fake Monitor","serial":"SERIAL-SECRET-999","cur":50,"max":100}]}' > "$TMP/fake/bright.json"
 
+# custom actions: harmless fixed commands (touch a marker file / fail), never a shell line
+cat >> "$TMP/cfg/zenvy/config.toml" <<ACT
+[[actions]]
+id = "mark"
+label = "Mark"
+argv = ["touch", "$TMP/fake/action-mark"]
+[[actions]]
+id = "danger"
+label = "Danger"
+confirm = true
+argv = ["touch", "$TMP/fake/action-danger"]
+[[actions]]
+id = "broken"
+label = "Broken"
+argv = ["false"]
+ACT
+
 # fake application entries and icons (the agent sees only these: XDG_DATA_DIRS is pointed at the sandbox)
 mkdir -p "$TMP/data/applications" "$TMP/data/icons/hicolor/64x64/apps"
 printf '\x89PNG\r\n\x1a\nFAKE-ICON-BYTES' > "$TMP/data/icons/hicolor/64x64/apps/zenvyfake.png"

@@ -1,5 +1,6 @@
 //! Network layer: TLS, HTTPS pairing endpoint, authenticated WebSocket, local admin socket.
 
+mod actions;
 mod admin;
 mod app;
 mod browser;
@@ -10,6 +11,7 @@ mod state;
 pub mod tls;
 mod ws;
 
+pub use actions::ActionDef;
 pub use admin::serve_admin;
 pub use app::{App, ApprovalRequest, Hub, NetConfig};
 pub use browser::{load_or_create_token, serve_browser, BrowserCommand, BrowserHub};
