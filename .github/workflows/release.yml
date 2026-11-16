@@ -84,7 +84,7 @@ jobs:
       # Artifact attestations need a public repository (or GitHub Enterprise Cloud), so this is skipped while private.
       - name: Sign build provenance
         if: ${{ !github.event.repository.private }}
-        uses: actions/attest-build-provenance@v2
+        uses: actions/attest-build-provenance@v4
         with:
           subject-path: |
             dist/*.tar.gz
