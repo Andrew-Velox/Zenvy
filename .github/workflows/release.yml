@@ -79,7 +79,9 @@ jobs:
 
       - name: Checksums
         working-directory: dist
-        run: sha256sum *.tar.gz *.apk 2>/dev/null | tee SHA256SUMS
+        run: |
+          shopt -s nullglob
+          sha256sum *.tar.gz *.apk | tee SHA256SUMS
 
       # Artifact attestations need a public repository (or GitHub Enterprise Cloud), so this is skipped while private.
       - name: Sign build provenance
