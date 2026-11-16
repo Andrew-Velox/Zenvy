@@ -49,8 +49,18 @@ async function snapshot() {
 
 // ---- site icons: the browser's own favicon cache, via the `favicon` permission (no network request)
 const FAV_MAX_BYTES = 12000;
-const favSent = new Set(); // hosts already handled on this connection
+const favSent = new Map(); // host -> the tab's icon address when it was last sent (a local change signal; it never leaves the browser)
 let favBusy = false;
+
+/** The image type from its first bytes: the browser's icon service sends no content-type header. */
+function sniffMime(b) {
+  if (b.length > 8 && b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4e && b[3] === 0x47) return 'image/png';
+  if (b.length > 3 && b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff) return 'image/jpeg';
+  if (b.length > 6 && b[0] === 0x47 && b[1] === 0x49 && b[2] === 0x46 && b[3] === 0x38) return 'image/gif';
+  if (b.length > 12 && b[0] === 0x52 && b[1] === 0x49 && b[2] === 0x46 && b[3] === 0x46 && b[8] === 0x57 && b[9] === 0x45 && b[10] === 0x42 && b[11] === 0x50) return 'image/webp';
+  if (b.length > 6 && b[0] === 0 && b[1] === 0 && b[2] === 1 && b[3] === 0) return 'image/x-icon';
+  return null;
+}
 
 async function faviconData(origin) {
   const u = new URL(chrome.runtime.getURL('/_favicon/'));
@@ -58,10 +68,10 @@ async function faviconData(origin) {
   u.searchParams.set('size', '32');
   const r = await fetch(u);
   if (!r.ok) return null;
-  const type = (r.headers.get('content-type') || '').split(';')[0].trim();
-  if (!/^image\/(png|jpeg|webp|gif|x-icon|vnd\.microsoft\.icon)$/.test(type)) return null;
   const bytes = new Uint8Array(await r.arrayBuffer());
   if (!bytes.length || bytes.length > FAV_MAX_BYTES) return null;
+  const type = sniffMime(bytes);
+  if (!type) return null;
   let bin = '';
   for (const b of bytes) bin += String.fromCharCode(b);
   return `data:${type};base64,${btoa(bin)}`;
@@ -72,18 +82,19 @@ async function sendFavicons() {
   favBusy = true;
   try {
     const tabs = await chrome.tabs.query({});
-    const want = new Map(); // host -> origin (the page address itself never leaves the browser)
+    // Only hosts whose tab already reports an icon: asking earlier would return the browser's generic placeholder.
+    const want = new Map(); // host -> { origin, key }
     for (const t of tabs) {
       let u; try { u = new URL(t.url || ''); } catch (_) { continue; }
-      if (u.protocol !== 'http:' && u.protocol !== 'https:') continue;
+      if ((u.protocol !== 'http:' && u.protocol !== 'https:') || !t.favIconUrl) continue;
       const host = hostOf(t.url);
-      if (host && !favSent.has(host) && !want.has(host)) want.set(host, u.origin + '/');
+      if (host && favSent.get(host) !== t.favIconUrl && !want.has(host)) want.set(host, { origin: u.origin + '/', key: t.favIconUrl });
     }
     const icons = {};
     let n = 0;
-    for (const [host, origin] of want) {
+    for (const [host, { origin, key }] of want) {
       if (n++ >= 12) break;
-      favSent.add(host);
+      favSent.set(host, key);
       try { const d = await faviconData(origin); if (d) icons[host] = d; } catch (_) { /* no icon for this site */ }
     }
     if (Object.keys(icons).length && ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ t: 'favicons', data: { icons } }));
@@ -146,7 +157,7 @@ for (const ev of [chrome.tabs.onCreated, chrome.tabs.onRemoved, chrome.tabs.onAc
                   chrome.tabs.onAttached, chrome.tabs.onDetached, chrome.tabs.onReplaced, chrome.windows.onFocusChanged,
                   chrome.windows.onRemoved]) ev.addListener(scheduleSend);
 chrome.tabs.onUpdated.addListener((_id, info) => {
-  if ('title' in info || 'url' in info || 'audible' in info || 'pinned' in info || info.status === 'complete') scheduleSend();
+  if ('title' in info || 'url' in info || 'audible' in info || 'pinned' in info || 'favIconUrl' in info || info.status === 'complete') scheduleSend();
 });
 // Reconnect only when the *settings* change. The status line lives in the same storage area, and
 // reacting to it would close and reopen the connection every time it connects (a reconnect loop).

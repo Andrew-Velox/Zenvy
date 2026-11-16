@@ -410,6 +410,17 @@ else {
     if (b) {
       const all = b.windows.flatMap(w => w.tabs); const find = t => all.find(x => x.title === t);
       ok(['Alpha', 'Beta', 'Gamma'].every(find), 'all three test tabs are listed with their titles');
+      { // site icons end to end: a local site that has an icon, read from the browser's own cache by the real extension
+        const httpm = (await import('node:http')).default;
+        const png = fsx.readFileSync(pathx.resolve('browser-extension/icons/icon-48.png'));
+        const site = httpm.createServer((q, s2) => { if (q.url === '/fav.png') { s2.setHeader('content-type', 'image/png'); s2.end(png); } else { s2.setHeader('content-type', 'text/html'); s2.end('<!doctype html><title>IconSite</title><link rel="icon" href="/fav.png">'); } }).listen(0, '127.0.0.1');
+        await sleep(200);
+        await fetch(`http://127.0.0.1:${CDP}/json/new?${encodeURIComponent('http://127.0.0.1:' + site.address().port + '/')}`, { method: 'PUT' });
+        let url = null;
+        for (let i = 0; i < 20 && !url; i++) { cb.send({ t: 'favicon', id: 'rf' + i, data: { host: '127.0.0.1' } }); const r = await cb.until(m => m.id === 'rf' + i, 3000); url = r?.data?.url; if (!url) await sleep(700); }
+        ok(!!url && /^data:image\/png;base64,[A-Za-z0-9+\/=]+$/.test(url), `the real extension read a site icon from the browser's own cache (it sends no content-type header) and the phone can fetch it (${url ? url.length + ' chars' : 'none'})`);
+        site.close();
+      }
       ok(all.every(t => !/^data:/.test(t.host) && t.host.length < 40), `only host-like names are reported, never URLs (${all.map(t => JSON.stringify(t.host)).join(' ')})`);
       const beta = find('Beta'), gamma = find('Gamma');
       cb.send({ t: 'browser', id: 'r1', data: { cmd: 'activate_tab', browser: b.id, tab_id: beta.id, window_id: beta.window_id } });
