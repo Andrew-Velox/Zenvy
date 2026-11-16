@@ -389,7 +389,10 @@ mod tests {
             parse_exec("app --title=%c --path=%f 100%%", "My App"),
             Some(d(&["app", "--title=My App", "--path=", "100%"]))
         );
-        assert_eq!(parse_exec("env FOO=1 app %U", "A"), Some(d(&["env", "FOO=1", "app"])));
+        assert_eq!(
+            parse_exec("env FOO=1 app %U", "A"),
+            Some(d(&["env", "FOO=1", "app"]))
+        );
         assert_eq!(parse_exec("", "A"), None);
         assert_eq!(parse_exec("%u", "A"), None, "nothing left to run");
         assert_eq!(parse_exec(r#""unclosed"#, "A"), None);
@@ -413,12 +416,7 @@ mod tests {
             assert!(parse_entry("calc", &entry(bad), &desk).is_none(), "{bad}");
         }
         assert!(parse_entry("calc", &entry("OnlyShowIn=Hyprland;\n"), &desk).is_some());
-        assert!(parse_entry(
-            "x",
-            "[Desktop Entry]\nType=Link\nName=L\nExec=x\n",
-            &desk
-        )
-        .is_none());
+        assert!(parse_entry("x", "[Desktop Entry]\nType=Link\nName=L\nExec=x\n", &desk).is_none());
         assert!(parse_entry("x", "[Desktop Entry]\nType=Application\nExec=x\n", &desk).is_none());
         // keys of other groups (actions) are not read
         let t = "[Desktop Entry]\nType=Application\nName=A\nExec=a\n[Desktop Action new]\nName=B\nExec=evil\n";
@@ -436,18 +434,36 @@ mod tests {
             fs::create_dir_all(p).unwrap();
         }
         let w = |p: PathBuf, s: String| fs::write(p, s).unwrap();
-        w(user.join("calc.desktop"), entry("").replace("Name=Calc", "Name=My Calc"));
+        w(
+            user.join("calc.desktop"),
+            entry("").replace("Name=Calc", "Name=My Calc"),
+        );
         w(sys.join("calc.desktop"), entry(""));
-        w(sys.join("zed.desktop"), "[Desktop Entry]\nType=Application\nName=Zed\nExec=zed\n".into());
-        w(sys.join("sub/inner.desktop"), "[Desktop Entry]\nType=Application\nName=Inner\nExec=inner\n".into());
-        w(sys.join("gone.desktop"), entry("TryExec=not-installed-anywhere\n"));
-        w(sys.join("here.desktop"), entry("TryExec=tool\n").replace("Calc", "Here"));
+        w(
+            sys.join("zed.desktop"),
+            "[Desktop Entry]\nType=Application\nName=Zed\nExec=zed\n".into(),
+        );
+        w(
+            sys.join("sub/inner.desktop"),
+            "[Desktop Entry]\nType=Application\nName=Inner\nExec=inner\n".into(),
+        );
+        w(
+            sys.join("gone.desktop"),
+            entry("TryExec=not-installed-anywhere\n"),
+        );
+        w(
+            sys.join("here.desktop"),
+            entry("TryExec=tool\n").replace("Calc", "Here"),
+        );
         let tool = bin.join("tool");
         fs::write(&tool, "#!/bin/sh\n").unwrap();
         use std::os::unix::fs::PermissionsExt;
         fs::set_permissions(&tool, fs::Permissions::from_mode(0o755)).unwrap();
         // an entry hidden in the user directory hides the system one
-        w(user.join("zed.desktop"), "[Desktop Entry]\nType=Application\nName=Zed\nExec=zed\nHidden=true\n".into());
+        w(
+            user.join("zed.desktop"),
+            "[Desktop Entry]\nType=Application\nName=Zed\nExec=zed\nHidden=true\n".into(),
+        );
         fs::write(sys.join("notes.txt"), "x").unwrap();
 
         let apps = Apps::new(vec![user, sys], d(&[]), vec![bin]);

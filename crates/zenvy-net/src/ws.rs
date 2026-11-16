@@ -393,7 +393,15 @@ async fn handle(app: &Arc<App>, ctx: &mut Ctx, m: Msg) -> (Option<Value>, bool) 
     if app.is_locked()
         && matches!(
             m.t.as_str(),
-            "cmd" | "input" | "browser" | "favicon" | "action" | "clipboard" | "file" | "screen" | "apps"
+            "cmd"
+                | "input"
+                | "browser"
+                | "favicon"
+                | "action"
+                | "clipboard"
+                | "file"
+                | "screen"
+                | "apps"
         )
     {
         return err("pc_locked", "The PC is locked. Unlock it first.", false);
@@ -991,7 +999,9 @@ async fn handle(app: &Arc<App>, ctx: &mut Ctx, m: Msg) -> (Option<Value>, bool) 
                     );
                     match zenvy_apps::launch(&entry) {
                         Ok(()) => (
-                            Some(json!({ "v": 1, "t": "apps", "id": id, "data": { "state": "launched", "name": entry.name, "workspace": ws_id } })),
+                            Some(
+                                json!({ "v": 1, "t": "apps", "id": id, "data": { "state": "launched", "name": entry.name, "workspace": ws_id } }),
+                            ),
                             false,
                         ),
                         Err(e) => err("failed", &e, false),
@@ -1375,8 +1385,11 @@ mod tests {
 
 /// The lowest numbered workspace (1 and up) that has no windows: where "open on a new workspace" goes.
 fn lowest_empty_workspace(list: &[zenvy_proto::Workspace]) -> i64 {
-    let busy: std::collections::HashSet<i64> =
-        list.iter().filter(|w| w.windows > 0).map(|w| w.id).collect();
+    let busy: std::collections::HashSet<i64> = list
+        .iter()
+        .filter(|w| w.windows > 0)
+        .map(|w| w.id)
+        .collect();
     (1..=1000).find(|i| !busy.contains(i)).unwrap_or(1000)
 }
 
@@ -1402,7 +1415,11 @@ mod apps_tests {
             2,
             "an existing empty workspace is reused"
         );
-        assert_eq!(lowest_empty_workspace(&[w(1, 1), w(3, 1)]), 2, "gaps are filled");
+        assert_eq!(
+            lowest_empty_workspace(&[w(1, 1), w(3, 1)]),
+            2,
+            "gaps are filled"
+        );
         assert_eq!(
             lowest_empty_workspace(&[w(-98, 3), w(1, 0)]),
             1,
