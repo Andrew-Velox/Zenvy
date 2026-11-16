@@ -81,7 +81,9 @@ jobs:
         working-directory: dist
         run: sha256sum *.tar.gz *.apk 2>/dev/null | tee SHA256SUMS
 
+      # Artifact attestations need a public repository (or GitHub Enterprise Cloud), so this is skipped while private.
       - name: Sign build provenance
+        if: ${{ !github.event.repository.private }}
         uses: actions/attest-build-provenance@v2
         with:
           subject-path: |
