@@ -69,7 +69,7 @@ fn extension_data_is_sanitized_without_panicking() {
         let v: Value = json!({
             "icons": { noise(&mut rng, 40): noise(&mut rng, 300), "a.example": "data:image/png;base64,AAAA" },
             "tabs": [ { "id": (rng.next() as i64), "title": noise(&mut rng, 300), "url": noise(&mut rng, 100),
-                        "active": rng.next() % 2 == 0, "windowId": (rng.next() as i64) }, noise(&mut rng, 10), null, 5 ],
+                        "active": rng.next() & 1 == 0, "windowId": (rng.next() as i64) }, noise(&mut rng, 10), null, 5 ],
             "focused": noise(&mut rng, 5),
         });
         let _ = sanitize_favicons(&v);

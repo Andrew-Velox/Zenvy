@@ -1,16 +1,24 @@
 [Unit]
 Description=Zenvy agent (phone remote control for Hyprland)
+Documentation=https://github.com/Andrew-Velox/Zenvy
 After=graphical-session.target
 PartOf=graphical-session.target
+# Needs a running Wayland session; do nothing at a text login
+ConditionEnvironment=WAYLAND_DISPLAY
 
 [Service]
 Type=simple
-ExecStart=%h/.local/bin/zenvyd serve
+ExecStart=/usr/bin/zenvyd serve
 Restart=on-failure
 RestartSec=2
-# Runs as your user, never as root. Extra sandboxing is deliberately not set yet: it has not been
-# tested against uinput / Wayland socket access (see PLAN.md §9).
-NoNewPrivileges=yes
+# Stopping or restarting the agent must not close the apps you started from the phone: they run in this service's
+# control group, so only the agent process itself is stopped.
+KillMode=process
+# The agent runs as your own user, never as root.
+#
+# Sandboxing options (NoNewPrivileges, ProtectSystem, RestrictAddressFamilies and the like) are deliberately NOT set:
+# every app you start from the phone is a child of this service and would inherit them, so a browser, a Flatpak app or
+# anything that uses sudo/pkexec/a setuid helper would behave differently than when started from your desktop.
 
 [Install]
 WantedBy=graphical-session.target

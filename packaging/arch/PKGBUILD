@@ -1,0 +1,51 @@
+# Maintainer: Zenvy contributors
+pkgname=zenvy
+pkgver=0.1.0
+pkgrel=1
+pkgdesc='Control a Hyprland PC from your phone: touchpad, keyboard, windows, media, screen, files'
+arch=('x86_64' 'aarch64')
+url='https://github.com/Andrew-Velox/Zenvy'
+license=('MIT')
+depends=('hyprland' 'opus' 'libgcc')
+makedepends=('cargo' 'pkgconf')
+# Arch's default LTO flags break linking the C crypto library (aws-lc) that rustls uses
+options=('!lto')
+optdepends=(
+  'grim: screen preview'
+  'wl-clipboard: clipboard transfer and opening links'
+  'libpulse: volume control and phone speaker (pactl, parec)'
+  'libnotify: desktop notices when a phone connects'
+  'ddcutil: monitor brightness over DDC/CI'
+  'wtype: typing text from the phone'
+)
+source=("$pkgname-$pkgver.tar.gz::$url/archive/refs/tags/v$pkgver.tar.gz")
+sha256sums=('SKIP') # replace with the real checksum of the release tarball before publishing
+
+prepare() {
+  cd "Zenvy-$pkgver"
+  export RUSTUP_TOOLCHAIN=stable
+  cargo fetch --locked --target "$(rustc -vV | sed -n 's/host: //p')"
+}
+
+build() {
+  cd "Zenvy-$pkgver"
+  export RUSTUP_TOOLCHAIN=stable CARGO_TARGET_DIR=target
+  cargo build --frozen --release -p zenvyd
+}
+
+check() {
+  cd "Zenvy-$pkgver"
+  export RUSTUP_TOOLCHAIN=stable CARGO_TARGET_DIR=target
+  cargo test --frozen --workspace --lib --release
+}
+
+package() {
+  cd "Zenvy-$pkgver"
+  install -Dm755 target/release/zenvyd "$pkgdir/usr/bin/zenvyd"
+  install -Dm644 packaging/systemd/zenvyd.service "$pkgdir/usr/lib/systemd/user/zenvyd.service"
+  install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+  install -Dm644 README.md "$pkgdir/usr/share/doc/$pkgname/README.md"
+  install -Dm644 SECURITY.md "$pkgdir/usr/share/doc/$pkgname/SECURITY.md"
+  install -dm755 "$pkgdir/usr/share/$pkgname"
+  cp -r browser-extension "$pkgdir/usr/share/$pkgname/browser-extension"
+}
