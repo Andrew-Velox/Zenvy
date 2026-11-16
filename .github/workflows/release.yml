@@ -52,7 +52,7 @@ jobs:
         with:
           distribution: temurin
           java-version: 17
-      - uses: gradle/actions/setup-gradle@v4
+      - uses: gradle/actions/setup-gradle@v6
 
       # Signing uses YOUR keystore, stored only as repository secrets (see docs/RELEASING.md).
       # Without the secrets the APK step is skipped and the release has the agent only.
