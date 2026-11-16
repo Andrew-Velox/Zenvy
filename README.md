@@ -40,6 +40,8 @@ zenvyd pair                        # QR code; scan it with the Android app, then
 
 The service starts at login (`journalctl --user -u zenvyd` for logs) and only authenticated, approved phones can use it. `packaging/uninstall.sh` removes it again (`--purge` also deletes paired phones and settings; your received files are never touched). Stopping or restarting the service does not close apps you started from the phone.
 
+The prebuilt `zenvyd` in a release is built on Ubuntu 24.04 (glibc 2.39 or newer, plus `libopus`); on an older system `packaging/install.sh` builds from source instead.
+
 The Android app is in the release as an APK (`adb install`, or open the file on the phone); to build it yourself see [android/README.md](android/README.md). Releases are checksummed, built reproducibly and carry signed provenance ([docs/RELEASING.md](docs/RELEASING.md), [docs/REPRODUCIBLE.md](docs/REPRODUCIBLE.md)).
 
 ## Browser tabs (optional)

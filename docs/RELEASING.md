@@ -38,7 +38,7 @@ Also turn on **Settings → Code security → Private vulnerability reporting**,
 - `zenvy-X.Y.Z.apk`: the Android app signed with your key.
 - `SHA256SUMS`, and signed build provenance (verify with `gh attestation verify <file> -R <owner>/Zenvy`) once the repository is public; GitHub does not offer attestations for private repositories on free accounts, so the step is skipped while it is private.
 
-The agent is built reproducibly (see [REPRODUCIBLE.md](REPRODUCIBLE.md)): anyone can rebuild the tag and get the same bytes.
+The agent build does not depend on where it is done (see [REPRODUCIBLE.md](REPRODUCIBLE.md) for exactly what that does and does not guarantee). The prebuilt binary is built on Ubuntu 24.04 and needs glibc 2.39 or newer.
 
 ## Arch (AUR)
 
