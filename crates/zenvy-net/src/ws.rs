@@ -334,7 +334,7 @@ async fn handle(app: &Arc<App>, ctx: &mut Ctx, m: Msg) -> (Option<Value>, bool) 
     if app.is_locked()
         && matches!(
             m.t.as_str(),
-            "cmd" | "input" | "browser" | "favicon" | "action"
+            "cmd" | "input" | "browser" | "favicon" | "action" | "clipboard"
         )
     {
         return err("pc_locked", "The PC is locked. Unlock it first.", false);
@@ -454,6 +454,69 @@ async fn handle(app: &Arc<App>, ctx: &mut Ctx, m: Msg) -> (Option<Value>, bool) 
                 Some(json!({ "v": 1, "t": "icon", "id": id, "data": data })),
                 false,
             )
+        }
+        "clipboard" => {
+            // Explicit transfers only: nothing here runs unless a person tapped a button on the phone.
+            if !ctx.scopes.contains("clipboard") {
+                return err("forbidden", &format!("This phone may not use the clipboard yet. On the PC run: zenvyd grant {} clipboard", ctx.device_id), false);
+            }
+            let Some(tools) = &app.cfg.clipboard else {
+                return err(
+                    "capability_unavailable",
+                    "clipboard transfer is not available on this PC (wl-clipboard is missing)",
+                    false,
+                );
+            };
+            let name = crate::listen::clean_name(
+                &app.store
+                    .lock()
+                    .unwrap()
+                    .get(&ctx.device_id)
+                    .map(|d| d.name.clone())
+                    .unwrap_or_default(),
+            );
+            match m.data.get("cmd").and_then(Value::as_str).unwrap_or("") {
+                "get" => {
+                    app.audit.record("clipboard_get", Some(&ctx.device_id), "");
+                    crate::listen::notify_text(app, &format!("{name} read this PC's clipboard"))
+                        .await;
+                    match tools.get().await {
+                        Ok(text) => (
+                            Some(
+                                json!({ "v": 1, "t": "clipboard", "id": id, "data": { "text": text } }),
+                            ),
+                            false,
+                        ),
+                        Err(e) => err("failed", &e, false),
+                    }
+                }
+                "set" => {
+                    let Some(text) = m.data.get("text").and_then(Value::as_str) else {
+                        return err("invalid_command", "text is required", true);
+                    };
+                    app.audit.record("clipboard_set", Some(&ctx.device_id), "");
+                    match tools.set(text).await {
+                        Ok(()) => (Some(ack()), false),
+                        Err(e) => err("failed", &e, false),
+                    }
+                }
+                "open" => {
+                    let Some(url) = m.data.get("url").and_then(Value::as_str) else {
+                        return err("invalid_command", "url is required", true);
+                    };
+                    if let Err(e) = crate::clipboard::valid_url(url) {
+                        return err("invalid_command", e, false);
+                    }
+                    app.audit.record("link_open", Some(&ctx.device_id), "");
+                    crate::listen::notify_text(app, &format!("{name} opened a link on this PC"))
+                        .await;
+                    match tools.open(url).await {
+                        Ok(()) => (Some(ack()), false),
+                        Err(e) => err("failed", &e, false),
+                    }
+                }
+                _ => err("invalid_command", "unknown clipboard command", true),
+            }
         }
         "action" => {
             // Custom actions from the config. The phone sends an id; the command line never leaves the agent.

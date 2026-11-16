@@ -24,7 +24,7 @@ J
 : > "$TMP/fake/events"
 cp "$ROOT/tests/fakes/pactl" "$TMP/bin/pactl"
 cp "$ROOT/tests/fakes/ddcutil" "$TMP/bin/ddcutil"
-for f in loginctl systemctl busctl; do cp "$ROOT/tests/fakes/$f" "$TMP/bin/$f"; done
+for f in loginctl systemctl busctl wl-copy wl-paste xdg-open; do cp "$ROOT/tests/fakes/$f" "$TMP/bin/$f"; done
 cp "$ROOT/tests/fakes/parec" "$TMP/bin/parec"; cp "$ROOT/tests/fakes/notify-send" "$TMP/bin/notify-send"
 echo '{"ddc":[{"bus":2,"connector":"card1-HDMI-A-1","model":"Fake Monitor","serial":"SERIAL-SECRET-999","cur":50,"max":100}]}' > "$TMP/fake/bright.json"
 

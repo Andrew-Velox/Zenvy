@@ -40,6 +40,8 @@ pub struct NetConfig {
     pub features: BTreeMap<String, bool>,
     /// Custom actions from the config (the argument vectors stay here).
     pub actions: Vec<crate::actions::ActionDef>,
+    /// `None` when `wl-copy`/`wl-paste` are missing: no clipboard transfer.
+    pub clipboard: Option<crate::clipboard::ClipboardTools>,
 }
 
 pub struct App {

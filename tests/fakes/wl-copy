@@ -1,0 +1,4 @@
+#!/usr/bin/env node
+// Fake `wl-copy`: stdin becomes the fake clipboard file.
+const fs = require('fs'); const d = process.env.ZENVY_FAKE_DIR; const chunks = [];
+process.stdin.on('data', c => chunks.push(c)); process.stdin.on('end', () => { fs.writeFileSync(`${d}/clip`, Buffer.concat(chunks)); fs.writeFileSync(`${d}/clip-types`, 'text/plain\n'); });

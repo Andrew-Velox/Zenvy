@@ -1,6 +1,9 @@
 package app.zenvy.remote
 
 import android.app.Activity
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
 import android.content.Intent
 import android.content.res.Configuration
 import android.graphics.Color
@@ -37,6 +40,8 @@ class MainActivity : Activity() {
     private lateinit var errorText: TextView
     private lateinit var linkInput: EditText
     private var pin: PairLink? = null
+    /** Text another app shared to Zenvy. It is only ever handed to the page as a string, and the person confirms what to do with it. */
+    private var pendingShare: String = ""
 
     private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
 
@@ -57,6 +62,7 @@ class MainActivity : Activity() {
         }
         setContentView(root)
 
+        captureShare(intent)
         val fromIntent = intent?.dataString
         when {
             fromIntent != null && handleLink(fromIntent) -> {}
@@ -67,7 +73,18 @@ class MainActivity : Activity() {
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
+        setIntent(intent)
         intent.dataString?.let { handleLink(it) }
+        if (captureShare(intent)) web.evaluateJavascript("window.zenvyShareCheck&&zenvyShareCheck()", null) // fixed script: the text is pulled by the page, never pasted into JS
+    }
+
+    /** Remembers text shared with ACTION_SEND (plain text only, bounded). Returns true when there is something new. */
+    private fun captureShare(i: Intent?): Boolean {
+        if (i?.action != Intent.ACTION_SEND || i.type != "text/plain") return false
+        val t = i.getStringExtra(Intent.EXTRA_TEXT)?.trim().orEmpty()
+        if (t.isEmpty()) return false
+        pendingShare = t.take(12_000)
+        return true
     }
 
     // ------------------------------------------------------------------ navigation / state
@@ -168,6 +185,20 @@ class MainActivity : Activity() {
         @JavascriptInterface fun version(): String = BuildConfig.VERSION_NAME
         @JavascriptInterface fun forget() { runOnUiThread { forgetPc() } }
         @JavascriptInterface fun isDark(): Boolean = isNight()
+        /** The phone's clipboard text, for "send to PC". Read only when the person taps the button in the app (the app is in front). */
+        @JavascriptInterface fun clipboardRead(): String {
+            val cm = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+            val clip = cm.primaryClip ?: return ""
+            if (clip.itemCount == 0) return ""
+            return clip.getItemAt(0).coerceToText(this@MainActivity)?.toString()?.take(12_000) ?: ""
+        }
+        /** Puts text on the phone's clipboard ("copy from PC"). */
+        @JavascriptInterface fun clipboardWrite(text: String) {
+            val cm = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+            cm.setPrimaryClip(ClipData.newPlainText("Zenvy", text.take(65_536)))
+        }
+        /** The text another app shared with Zenvy, once. */
+        @JavascriptInterface fun takeShare(): String { val t = pendingShare; pendingShare = ""; return t }
         /** The page tells us its surface colours so the system bars and WebView background match the theme. */
         @JavascriptInterface fun setChrome(bg: String, nav: String, lightIcons: Boolean) {
             val hex = Regex("^#[0-9a-fA-F]{6}$")

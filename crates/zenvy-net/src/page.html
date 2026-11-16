@@ -379,6 +379,11 @@ body.locked #top,body.locked #nav{display:none}
 .actbtn{display:flex;align-items:center;gap:10px;height:52px;padding:0 14px;border-radius:18px;background:var(--fill-2);box-shadow:var(--rim-soft);text-align:left;font-size:15px;font-weight:500;color:var(--on-surface)}
 .actbtn span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.actbtn .i{color:var(--primary-ink)}
 .actbtn:active{background:var(--fill-3)}
+
+/* ---------- clipboard ---------- */
+.clipbtns{display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:12px}
+.clipsnip{display:flex;align-items:center;gap:8px;margin:0 12px 12px 16px;padding:0 0 0 4px;color:var(--on-surface-v);font-size:13px}.clipsnip span{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.clipsnip .ibtn{width:36px;height:36px}
+.shsnip{max-height:84px;overflow:hidden;word-break:break-word;padding:0 8px}
 </style></head><body>
 <div id="backdrop" aria-hidden="true"><svg width="100%" height="100%" viewBox="0 0 400 800" preserveAspectRatio="xMidYMid slice"><defs><filter id="bdblur" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="46"/></filter></defs><g filter="url(#bdblur)"><circle cx="330" cy="110" r="150" style="fill:var(--bd-a);opacity:var(--bd-ao)"/><circle cx="20" cy="360" r="130" style="fill:var(--bd-b);opacity:var(--bd-bo)"/><circle cx="360" cy="560" r="120" style="fill:var(--bd-c);opacity:var(--bd-co)"/><circle cx="90" cy="740" r="150" style="fill:var(--bd-a);opacity:var(--bd-ao)"/></g></svg></div>
 <svg width="0" height="0" style="position:absolute" aria-hidden="true"><symbol id="zlogo" viewBox="-300 -300 600 600"><path fill="currentColor" fill-rule="evenodd" d="M-33.3 -223.6 L-32.1 -224.1 L-8.1 -224.1 L204.9 -224.1 L213.9 -223.8 L221.9 -222.0 L229.9 -218.9 L236.9 -215.0 L244.7 -208.6 L250.4 -202.6 L255.2 -195.6 L259.3 -187.6 L262.5 -177.6 L263.4 -171.6 L263.5 -162.6 L262.4 -153.6 L261.4 -149.6 L259.4 -143.6 L256.2 -136.6 L252.4 -130.6 L247.9 -124.9 L157.9 -32.2 L52.9 77.5 L46.9 82.6 L38.9 88.0 L30.9 91.8 L22.9 93.9 L14.9 94.7 L-47.1 95.5 L-47.7 94.4 L160.4 -115.6 L162.2 -118.6 L163.1 -121.6 L163.2 -125.6 L162.1 -128.6 L159.9 -131.0 L156.9 -132.8 L152.9 -133.6 L-122.6 -127.6 L-122.9 -128.6 L-119.3 -132.6ZM16.2 -71.6 L54.9 -72.3 L55.9 -72.2 L56.3 -71.6 L-158.5 146.4 L-159.3 147.4 L-159.1 147.8 L89.9 148.0 L91.0 147.4 L90.4 146.4 L69.4 122.4 L69.9 121.2 L249.9 117.7 L251.0 118.4 L250.2 119.4 L206.2 167.4 L159.9 217.4 L153.9 221.5 L147.9 223.7 L144.9 224.1 L-203.1 224.1 L-209.1 223.7 L-215.1 222.6 L-225.1 219.6 L-234.1 214.7 L-242.6 208.4 L-249.4 201.4 L-252.4 197.4 L-257.6 188.4 L-261.4 178.4 L-262.5 173.4 L-263.5 164.4 L-263.4 159.4 L-262.4 152.4 L-260.3 144.4 L-256.3 135.4 L-252.5 129.4 L-249.1 125.0 L-87.9 -39.6 L-75.1 -50.9 L-66.1 -57.1 L-55.1 -63.0 L-47.1 -66.1 L-37.1 -69.0 L-24.1 -70.9Z"/><path style="fill:var(--logo-accent)" d="M-131.6 -222.6 L-66.1 -223.4 L-64.8 -222.6 L-143.9 -137.6 L-150.1 -131.5 L-155.1 -128.4 L-158.1 -127.3 L-161.1 -126.9 L-260.5 -124.6 L-260.3 -125.6 L-181.1 -210.9 L-173.1 -219.0 L-168.1 -221.7 L-165.1 -222.4Z"/></symbol></svg>
@@ -402,6 +407,7 @@ body.locked #top,body.locked #nav{display:none}
     </div>
     <div class="kpanel"><div class="keys r6" id="k-f"></div></div>
     <h2>Shortcuts</h2><div class="keys r3" id="k-sc"></div>
+    <div id="k-clipwrap" hidden><h2>Clipboard</h2><div id="k-clip"></div></div>
   </section>
   <section class="view" id="v-media" hidden><div id="m-player"></div><div id="m-listen"></div><div id="m-audio"></div><div id="m-bright"></div></section>
   <section class="view" id="v-lock" hidden><div class="lk"><div class="lk-clock" id="lk-clock"></div><div class="lk-pill" id="lk-pill"></div><div class="lk-cards" id="lk-cards"></div></div></section>
@@ -460,6 +466,8 @@ const ICONS={
   unlockic:'<rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 7.5-2"/>',
   restart:'<path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/>',
   trash:'<path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M10 11v6M14 11v6"/>',
+  upload:'<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m17 8-5-5-5 5"/><path d="M12 3v12"/>',
+  download:'<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/><path d="M12 15V3"/>',
   wifi:'<path d="M5 12.55a11 11 0 0 1 14.08 0M1.42 9a16 16 0 0 1 21.16 0M8.53 16.11a6 6 0 0 1 6.95 0M12 20h.01"/>',
   wifioff:'<path d="M12 20h.01M8.5 16.43a5 5 0 0 1 3.5-1.43M2 8.82a15 15 0 0 1 4.17-2.65M10.66 5c4.01-.36 8.14.9 11.34 3.76M16.85 11.25a10 10 0 0 1 2.22 1.68M5 12.86a10 10 0 0 1 5.17-2.89M2 2l20 20"/>',
   spin:'<path d="M21 12a9 9 0 1 1-6.22-8.56"/>'
@@ -543,7 +551,7 @@ function buildNav(){
   $('nav').querySelectorAll('button').forEach(b=>b.classList.toggle('on',b.dataset.tab===tab));
   if(!items.some(t=>t[0]===tab))tab='desk';
 }
-function setTab(t){if(isLocked()){showView('lock');renderLockScreen();return}tab=t;$('nav').querySelectorAll('button').forEach(b=>b.classList.toggle('on',b.dataset.tab===t));prefs.lastTab=t;clearTimeout(setTab.st);setTab.st=setTimeout(savePrefs,400);showView(t);if(t==='media'){renderMedia();renderListen();renderAudio();renderBright();sendBright({cmd:'refresh'})}renderWs()}
+function setTab(t){if(isLocked()){showView('lock');renderLockScreen();return}tab=t;$('nav').querySelectorAll('button').forEach(b=>b.classList.toggle('on',b.dataset.tab===t));prefs.lastTab=t;clearTimeout(setTab.st);setTab.st=setTimeout(savePrefs,400);showView(t);if(t==='media'){renderMedia();renderListen();renderAudio();renderBright();sendBright({cmd:'refresh'})}if(t==='keys')renderClip();renderWs()}
 $('gear').innerHTML=ic('tune');$('back').innerHTML=ic('back');
 $('gear').onclick=()=>{buzz();renderSettings();showView('settings')};
 $('back').onclick=()=>{buzz();setTab(tab)};
@@ -580,7 +588,7 @@ async function connect(){
       const sig=await crypto.subtle.sign('Ed25519',dev.key,msg);
       ws.send(JSON.stringify({v:1,t:'auth',data:{device_id:dev.id,sig:b64u(sig)}}));
     }else if(m.t==='ready'){backoff=500;live('on','…');startPing()}
-    else if(m.t==='snapshot'){caps=m.data.capabilities;manifest=m.data.ui_manifest;state=m.data.desktop;browser=m.data.browser||{browsers:[]};audio=m.data.audio||null;media=m.data.media||null;bright=m.data.brightness||null;power=m.data.power||null;actions=m.data.actions||[];mediaAt=Date.now();buildNav();renderPower();if(view==='gate')setTab(tab);else renderWs();renderDesk()}
+    else if(m.t==='snapshot'){caps=m.data.capabilities;manifest=m.data.ui_manifest;state=m.data.desktop;browser=m.data.browser||{browsers:[]};audio=m.data.audio||null;media=m.data.media||null;bright=m.data.brightness||null;power=m.data.power||null;actions=m.data.actions||[];share=m.data.share||{clipboard:false,open_link:false};mediaAt=Date.now();buildNav();renderPower();if(view==='gate')setTab(tab);else renderWs();renderDesk()}
     else if(m.t==='evt'&&m.data.topic==='desktop.state'){state=m.data.value;renderWs();renderDesk()}
     else if(m.t==='icon'){onIcon(m.data)}
     else if(m.t==='favicon'){onFavicon(m.data)}
@@ -885,7 +893,7 @@ function renderListen(){
 
 
 /* ---------- power: the lock banner and the power sheet ---------- */
-let actions=[],power=null,pwrSched=null,pwrView=null,pwrAction=null,pwrErr='',pwrBusy=false,pwrTimer=0;
+let share={clipboard:false,open_link:false},shareText='',clipSnip='',actions=[],power=null,pwrSched=null,pwrView=null,pwrAction=null,pwrErr='',pwrBusy=false,pwrTimer=0;
 const rpcCbs={};
 function rpc(type,data,cb){
   const id='pw-'+Math.random().toString(36).slice(2,8);
@@ -1036,6 +1044,11 @@ function renderSheet(){
     const a=PWR[pwrSched.action];
     h='<div class="sbig'+(pwrSched.action==='poweroff'?' bad':'')+'">'+ic(a.icon)+'</div><h3 class="stitle" id="cdt"></h3><div class="ssub">'+(pwrSched.by?'Started by '+esc(pwrSched.by):'')+'</div>'+
       (pwrSched.running?'':'<button class="sprimary neutral" id="cancelpw">Cancel</button>');
+  }else if(pwrView==='share'){
+    const link=asLink(shareText);
+    h='<div class="sbig">'+ic('upload')+'</div><h3 class="stitle">Send to this PC</h3><div class="ssub shsnip">'+esc(shareText.slice(0,160))+(shareText.length>160?'\u2026':'')+'</div>'+
+      '<button class="sprimary" id="sh-clip">'+ic('copy','s')+'Copy to PC clipboard</button>'+
+      (link&&share.open_link?'<button class="sprimary neutral" id="sh-open">'+ic('globe','s')+'Open on PC</button>':'')+'<button class="sbtn2" id="scancel">Cancel</button>';
   }else if(pwrView==='unlock'){
     h='<div class="sbig">'+ic('lock')+'</div><h3 class="stitle">PC locked</h3><div class="ssub">Type the password for this PC</div>'+
       '<div class="pass">'+ic('lock','s')+'<input id="pw" type="password" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="go" name="zv'+Math.random().toString(36).slice(2,8)+'" placeholder="Password"'+(pwrBusy?' disabled':'')+'></div>'+err+
@@ -1047,6 +1060,8 @@ function renderSheet(){
   const sc=$('scancel');if(sc)sc.onclick=()=>{buzz();closeSheet()};
   const cp=$('cancelpw');if(cp)cp.onclick=()=>{buzz();if(pwrSched)rpc('power',{cmd:'cancel',token:pwrSched.id},()=>{})};
   const ub=$('unl');if(ub)ub.onclick=()=>{buzz();doUnlock()};
+  const sc2=$('sh-clip');if(sc2)sc2.onclick=()=>{buzz();const t=shareText.trim().slice(0,12000);closeSheet();rpc('clipboard',{cmd:'set',text:t},r=>{if(r.t==='ack'){clipSnip=t.slice(0,120);snack('Sent to the PC clipboard')}else snack(clipMsg(r))})};
+  const so=$('sh-open');if(so)so.onclick=()=>{buzz();const u=asLink(shareText);closeSheet();if(u)openOnPc(u)};
   const pw=$('pw');if(pw)pw.onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();doUnlock()}};
   if(pwrView==='count')tickPwr();
 }
@@ -1063,6 +1078,37 @@ function onPowerEvent(topic,v){
   return false;
 }
 
+
+/* ---------- clipboard and sharing: explicit, one tap per transfer (nothing syncs by itself) ---------- */
+const phoneClip={
+  read:async()=>{try{if(window.ZenvyApp&&ZenvyApp.clipboardRead)return ZenvyApp.clipboardRead()||'';return (await navigator.clipboard.readText())||''}catch(e){return ''}},
+  write:async t=>{try{if(window.ZenvyApp&&ZenvyApp.clipboardWrite){ZenvyApp.clipboardWrite(t);return true}await navigator.clipboard.writeText(t);return true}catch(e){return false}}
+};
+const asLink=t=>{const u=(t||'').trim().replace(/^HTTPS?:\/\//i,m=>m.toLowerCase());return /^https?:\/\/[\x21-\x7e]{1,2040}$/.test(u)?u:''};
+const clipMsg=r=>(r&&r.data&&r.data.message)||'It did not work';
+async function clipToPc(){
+  const t=(await phoneClip.read()).trim();if(!t){snack('The phone clipboard is empty');return}
+  rpc('clipboard',{cmd:'set',text:t},r=>{if(r.t==='ack'){clipSnip=t.slice(0,120);snack('Sent to the PC clipboard');renderClip()}else snack(clipMsg(r))});
+}
+function clipFromPc(){
+  rpc('clipboard',{cmd:'get'},async r=>{
+    if(r.t!=='clipboard'){snack(clipMsg(r));return}
+    const t=r.data.text;if(!t){snack('The PC clipboard has no text');return}
+    clipSnip=t.slice(0,120);const ok=await phoneClip.write(t);snack(ok?'Copied to this phone':'Could not copy to this phone');renderClip();
+  });
+}
+function openOnPc(url){rpc('clipboard',{cmd:'open',url},r=>{if(r.t==='ack')snack('Opened on the PC');else snack(clipMsg(r))})}
+function renderClip(){
+  const w=$('k-clipwrap');w.hidden=!(share&&share.clipboard);if(w.hidden)return;
+  $('k-clip').innerHTML='<div class="card"><div class="clipbtns"><button class="actbtn" id="clip-to">'+ic('upload')+'<span>To PC</span></button><button class="actbtn" id="clip-from">'+ic('download')+'<span>From PC</span></button></div>'+
+    (clipSnip?'<div class="clipsnip" title="Last transfer"><span>'+esc(clipSnip)+'</span><button class="ibtn" id="clip-clear" aria-label="Clear">'+ic('x','s')+'</button></div>':'')+'</div>';
+  $('clip-to').onclick=()=>{buzz();clipToPc()};$('clip-from').onclick=()=>{buzz();clipFromPc()};
+  const c=$('clip-clear');if(c)c.onclick=()=>{clipSnip='';renderClip()};
+}
+/* "Share → Zenvy" from another app: the text is only a suggestion, the person picks what to do with it */
+function showShare(t){if(!t)return;if(!share.clipboard){snack('This PC does not allow clipboard transfer');return}shareText=t;openSheet('share')}
+window.zenvyShareCheck=()=>{try{const t=window.ZenvyApp&&ZenvyApp.takeShare&&ZenvyApp.takeShare();if(t)showShare(t)}catch(e){}};
+document.addEventListener('visibilitychange',()=>{if(!document.hidden)window.zenvyShareCheck()});
 /* ---------- custom actions (from the PC's config) ---------- */
 const actIcon=a=>(a.icon&&ICONS[a.icon])?a.icon:'zap';
 function actionsHtml(){
@@ -1264,8 +1310,10 @@ tab=prefs.lastTab||'pad';
       if(v==='tabs'){openTabs.add('1:1');prefs.scope='here'}
       if(v==='all')prefs.scope='all';
       if(v==='gate'){gate('Approve on your PC','Match this code, then tap Approve.','4821','shield');return}
+      share={clipboard:true,open_link:true};
       actions=[{id:'lights',label:'Lights off',icon:'sun',confirm:false},{id:'backup',label:'Back up now',icon:'copy',confirm:true},{id:'vpn',label:'Toggle VPN',icon:'globe',confirm:false},{id:'reboot-router',label:'Restart router',icon:'restart',confirm:true}];
       buildNav();renderDesk();
+      if(v==='share'){setTab('desk');showShare('https:'+'//example'+'.org/shared/page');return}
       if(v==='power'||v==='lock'||v==='unlock'||v==='confirm'||v==='count'||v==='lockmode'){setTab('desk');if(v==='power')openSheet('menu');if(v==='unlock')openSheet('unlock');if(v==='confirm'){pwrAction='poweroff';openSheet('confirm')}if(v==='count'){pwrAction='suspend';pwrSched={id:'x',action:'suspend',until:Date.now()+3000,by:'My phone'};openSheet('count');startPwrTimer()}renderPower();return}
       if(v==='settings'){tab='pad';renderSettings();showView('settings');return}
       if(v==='media'||v==='listen'){setTab('media');if(v==='listen'){listenState='on';renderListen();$('lstat').textContent='140 ms \u00b7 1 gap'}return}

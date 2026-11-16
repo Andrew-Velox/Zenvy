@@ -477,6 +477,25 @@ async fn build_brightness(
     Some(std::sync::Arc::new(adapter))
 }
 
+/// Clipboard transfer and link opening need wl-clipboard (`wl-copy`, `wl-paste`); `xdg-open` adds link opening.
+fn build_clipboard(sc: &Scan) -> Option<zenvy_net::ClipboardTools> {
+    let tool = |n: &str| {
+        sc.profile
+            .software_hints
+            .get(n)
+            .cloned()
+            .flatten()
+            .map(std::path::PathBuf::from)
+    };
+    let (copy, paste) = (tool("wl-copy")?, tool("wl-paste")?);
+    eprintln!("clipboard transfer: ready; phones need the 'clipboard' permission (zenvyd grant <id> clipboard)");
+    Some(zenvy_net::ClipboardTools {
+        copy,
+        paste,
+        open: tool("xdg-open"),
+    })
+}
+
 /// Power and lock control needs `systemctl` and `loginctl` (the `power.control` capability).
 async fn build_power(sc: &Scan, cfg: &zenvy_config::Config) -> Option<zenvy_net::PowerRuntime> {
     if sc.registry.get("power.control")?.state != zenvy_proto::CapState::Available {
@@ -716,6 +735,7 @@ async fn serve_cmd() -> Result<(), Box<dyn std::error::Error>> {
         max_devices: cfg.security.max_devices,
         allowed_hosts: hosts,
         features: cfg.features.clone(),
+        clipboard: build_clipboard(&sc),
         actions: cfg
             .actions
             .iter()

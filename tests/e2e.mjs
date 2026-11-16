@@ -540,6 +540,37 @@ else {
     ok(au().includes('"action_run"') && au().includes('mark') && !au().includes('touch') && !au().includes('action-mark'), 'runs are audit-logged by id, never by command line');
     ca.ws.close(); }
 
+
+  console.log('-- clipboard and links (fake wl-copy/wl-paste/xdg-open: the real clipboard is never touched)');
+  { const FD = process.env.ZENVY_FAKE_DIR, clip = `${FD}/clip`, opened = `${FD}/opened.log`;
+    for (const f of [clip, opened, `${FD}/clip-types`]) { try { fsx.unlinkSync(f); } catch {} }
+    const cc = await wsConnect(phone, dev); const snapC = await cc.until(m => m.t === 'snapshot');
+    const ask = async (id, data) => { cc.send({ t: 'clipboard', id, data }); return cc.until(m => m.id === id); };
+    const au = () => (process.env.ZENVY_AUDIT && fsx.existsSync(process.env.ZENVY_AUDIT)) ? fsx.readFileSync(process.env.ZENVY_AUDIT, 'utf8') : '';
+    const opens = () => (fsx.existsSync(opened) ? fsx.readFileSync(opened, 'utf8').split('\n').filter(Boolean) : []);
+    ok(snapC.data.share?.clipboard === true && snapC.data.share?.open_link === true, 'the phone is told clipboard transfer and link opening are available');
+    const no = await ask('c0', { cmd: 'set', text: 'x' });
+    ok(no?.t === 'err' && no.data.code === 'forbidden' && no.data.message.includes(`zenvyd grant ${dev} clipboard`) && !fsx.existsSync(clip), 'without the clipboard permission nothing happens and the grant command is shown');
+    await admin({ op: 'grant', id: dev, scope: 'clipboard' }); await sleep(300);
+    const secret = 'päss "wörd" $(touch /tmp/zv-no) `x` \\n 日本';
+    ok((await ask('c1', { cmd: 'set', text: secret }))?.t === 'ack' && fsx.readFileSync(clip, 'utf8') === secret, 'text sent from the phone lands on the PC clipboard unchanged (no shell involved)');
+    ok((await ask('c2', { cmd: 'get' }))?.data.text === secret, 'the PC clipboard can be read back on the phone');
+    ok(!fsx.existsSync('/tmp/zv-no'), 'shell syntax in the text was never executed');
+    fsx.writeFileSync(`${FD}/clip-types`, 'image/png\n');
+    ok((await ask('c3', { cmd: 'get' }))?.data.text === null, 'an image on the PC clipboard gives no text');
+    fsx.writeFileSync(`${FD}/clip-types`, 'text/plain\n'); fsx.writeFileSync(clip, 'a'.repeat(70000));
+    ok((await ask('c4', { cmd: 'get' }))?.data.code === 'failed', 'an oversize clipboard is refused, not truncated');
+    ok((await ask('c5', { cmd: 'set', text: 'a'.repeat(13000) }))?.data.code === 'failed', 'text over 12 KB from the phone is refused (bigger things belong in a file transfer)');
+    ok((await ask('c6', { cmd: 'open', url: 'https://example.com/a?b=1' }))?.t === 'ack' && opens().join() === 'https://example.com/a?b=1', 'a link opens on the PC with exactly that address');
+    for (const [id, url, why] of [['o1', 'javascript:alert(1)', 'javascript'], ['o2', 'file:///etc/passwd', 'a file link'], ['o3', 'https://user:pw@example.com/', 'credentials'], ['o4', 'https://exa mple.com', 'a space'], ['o5', 'ftp://example.com', 'ftp'], ['o6', 'https://example.com/' + 'a'.repeat(2100), 'a very long link']]) {
+      const r = await ask(id, { cmd: 'open', url }); ok(r?.t === 'err' && r.data.code === 'invalid_command', `link refused: ${why}`);
+    }
+    ok(opens().length === 1, 'refused links never reach xdg-open');
+    ok((await ask('c7', { cmd: 'set' }))?.data.code === 'invalid_command' && (await ask('c8', { cmd: 'paste-all' }))?.data.code === 'invalid_command', 'missing text and unknown commands are rejected');
+    ok(au().includes('"clipboard_get"') && au().includes('"clipboard_set"') && au().includes('"link_open"') && !au().includes('päss') && !au().includes('example.com'), 'transfers are audit-logged without their content');
+    ok(fsx.existsSync(`${FD}/notify.log`) && fsx.readFileSync(`${FD}/notify.log`, 'utf8').includes("read this PC's clipboard"), 'the person at the PC is notified when the clipboard is read');
+    cc.ws.close(); }
+
   console.log('-- power and lock (fake systemctl/loginctl: nothing real is ever suspended, restarted or locked)');
   { const FD = process.env.ZENVY_FAKE_DIR;
     const plogPath = `${FD}/power.log`, lockedPath = `${FD}/locked`;
@@ -568,7 +599,7 @@ else {
     const cl = await wsConnect(phone, dev); const snapL = await cl.until(m => m.t === 'snapshot');
     ok(snapL.data.power.lock === 'locked' && snapL.data.desktop.windows.length === 0 && snapL.data.desktop.workspaces.length === 0 && snapL.data.browser.browsers.length === 0, 'a phone that connects while the PC is locked is sent no windows, workspaces or tabs');
     const asked = async (type, id, data) => { cl.send({ t: type, id, data }); return cl.until(m => m.id === id); };
-    for (const [type, id, data, why] of [['cmd', 'lk1', { cmd: 'switch_workspace', id: 1 }, 'switching workspaces'], ['input', 'lk2', { cmd: 'pointer_move', dx: 0, dy: 0 }, 'the pointer'], ['browser', 'lk3', { cmd: 'close_tab', browser: 1, tab: 1 }, 'closing browser tabs'], ['favicon', 'lk7', { host: 'docs.rs' }, 'site icons'], ['action', 'lk8', { cmd: 'run', id: 'mark' }, 'custom actions']]) {
+    for (const [type, id, data, why] of [['cmd', 'lk1', { cmd: 'switch_workspace', id: 1 }, 'switching workspaces'], ['input', 'lk2', { cmd: 'pointer_move', dx: 0, dy: 0 }, 'the pointer'], ['browser', 'lk3', { cmd: 'close_tab', browser: 1, tab: 1 }, 'closing browser tabs'], ['favicon', 'lk7', { host: 'docs.rs' }, 'site icons'], ['action', 'lk8', { cmd: 'run', id: 'mark' }, 'custom actions'], ['clipboard', 'lk9', { cmd: 'get' }, 'the clipboard']]) {
       const r = await asked(type, id, data); ok(r?.t === 'err' && r.data.code === 'pc_locked', `refused while locked: ${why}`);
     }
     ok((await asked('audio', 'lk4', { cmd: 'set_volume', percent: 33 }))?.t === 'ack', 'volume still works while locked');

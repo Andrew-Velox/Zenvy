@@ -250,6 +250,7 @@ const HINT_TOOLS: &[&str] = &[
     "playerctl",
     "wl-copy",
     "wl-paste",
+    "xdg-open",
     "grim",
     "wf-recorder",
     "ydotool",
