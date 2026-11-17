@@ -203,6 +203,7 @@ async fn session(app: Arc<App>, ip: IpAddr, mut s: WebSocket) {
         close(&mut s, 4401, "auth failed").await;
         return;
     };
+    let _online = app.online.enter(&device_id); // this phone shows as connected until the session ends
     let scopes: HashSet<String> = app
         .store
         .lock()

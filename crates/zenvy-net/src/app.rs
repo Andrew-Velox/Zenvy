@@ -95,8 +95,57 @@ impl Drop for ConnGuard {
     }
 }
 
+/// Which paired phones have a live, authenticated session right now (a phone can hold more than one).
+#[derive(Default)]
+pub struct Online {
+    live: Mutex<BTreeMap<String, usize>>,
+}
+
+/// Held while a phone's session lives.
+pub struct OnlineGuard {
+    online: Arc<Online>,
+    id: String,
+}
+
+impl Online {
+    pub fn enter(self: &Arc<Self>, id: &str) -> OnlineGuard {
+        *self
+            .live
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .entry(id.to_string())
+            .or_insert(0) += 1;
+        OnlineGuard {
+            online: self.clone(),
+            id: id.to_string(),
+        }
+    }
+    pub fn is_online(&self, id: &str) -> bool {
+        self.live
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .contains_key(id)
+    }
+    pub fn count(&self) -> usize {
+        self.live.lock().unwrap_or_else(|e| e.into_inner()).len()
+    }
+}
+
+impl Drop for OnlineGuard {
+    fn drop(&mut self) {
+        let mut g = self.online.live.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some(n) = g.get_mut(&self.id) {
+            *n = n.saturating_sub(1);
+            if *n == 0 {
+                g.remove(&self.id);
+            }
+        }
+    }
+}
+
 pub struct App {
     pub conns: Arc<ConnLimit>,
+    pub online: Arc<Online>,
     pub adapter: HyprlandAdapter,
     /// `None` when no input backend is available; phones then get `capability_unavailable`.
     pub input: Option<Arc<InputAdapter<UinputSink>>>,
@@ -153,6 +202,7 @@ impl App {
         let audio_for_mute = audio.clone();
         Arc::new(Self {
             conns: Arc::default(),
+            online: Arc::default(),
             adapter,
             input,
             audio,
@@ -244,5 +294,26 @@ mod conn_tests {
         }
         assert!(all.len() < MAX_SOCKETS_TOTAL + 1 && all.len() >= MAX_SOCKETS_TOTAL - 2);
         assert!(l.acquire("203.0.113.9".parse().unwrap()).is_none());
+    }
+}
+
+#[cfg(test)]
+mod online_tests {
+    use super::*;
+
+    #[test]
+    fn a_phone_is_online_while_any_of_its_sessions_lives() {
+        let o = Arc::new(Online::default());
+        assert!(!o.is_online("a"));
+        let g1 = o.enter("a");
+        let g2 = o.enter("a");
+        let g3 = o.enter("b");
+        assert!(o.is_online("a") && o.is_online("b") && o.count() == 2);
+        drop(g1);
+        assert!(o.is_online("a"), "one session left");
+        drop(g2);
+        assert!(!o.is_online("a") && o.is_online("b") && o.count() == 1);
+        drop(g3);
+        assert_eq!(o.count(), 0);
     }
 }

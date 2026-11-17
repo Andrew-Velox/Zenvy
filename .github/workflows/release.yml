@@ -37,7 +37,7 @@ jobs:
           SOURCE_DATE_EPOCH: "1700000000"
         run: |
           export RUSTFLAGS="--remap-path-prefix=$PWD=/src --remap-path-prefix=$HOME/.cargo=/cargo --remap-path-prefix=$HOME/.rustup=/rustup -C strip=symbols"
-          cargo build --release --locked -p zenvyd
+          cargo build --release --locked -p zenvyd -p zenvy-gui
 
       - name: Package the agent
         run: |
@@ -45,7 +45,9 @@ jobs:
           d="zenvy-${v}-x86_64-linux"
           mkdir -p "dist/$d"
           install -m 0755 target/release/zenvyd "dist/$d/zenvyd"
+          install -m 0755 target/release/zenvy "dist/$d/zenvy"
           cp -r packaging LICENSE README.md SECURITY.md CHANGELOG.md browser-extension "dist/$d/"
+          install -m 0644 assets/logo/zenvy-icon-512.png "dist/$d/packaging/zenvy-icon-512.png"
           tar --sort=name --owner=0 --group=0 --numeric-owner --mtime=@1700000000 -czf "dist/$d.tar.gz" -C dist "$d"
 
       - uses: actions/setup-java@v5

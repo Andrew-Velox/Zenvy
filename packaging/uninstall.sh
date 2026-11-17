@@ -18,9 +18,10 @@ if command -v systemctl >/dev/null; then
   systemctl --user disable --now zenvyd.service 2>/dev/null || true
 fi
 unit="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user/zenvyd.service"
-rm -f "$unit" "$prefix/bin/zenvyd"
+data="${XDG_DATA_HOME:-$HOME/.local/share}"
+rm -f "$unit" "$prefix/bin/zenvyd" "$prefix/bin/zenvy" "$data/applications/zenvy.desktop" "$data/icons/hicolor/512x512/apps/zenvy.png"
 command -v systemctl >/dev/null && systemctl --user daemon-reload 2>/dev/null || true
-echo "Removed the zenvyd program and its service."
+echo "Removed the zenvyd program, the desktop window and the service."
 
 if [ "$purge" -eq 1 ]; then
   rm -rf "${XDG_DATA_HOME:-$HOME/.local/share}/zenvy" \

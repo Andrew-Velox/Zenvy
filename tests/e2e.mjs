@@ -1007,6 +1007,11 @@ console.log('== resilience');
 console.log('== revocation');
 const list = (await admin({ op: 'devices' })).find(l => l.type === 'devices').devices;
 ok(list.length >= 1 && !JSON.stringify(list).includes('pubkey'), 'device list does not expose key material');
+// the desktop window (`zenvy`) reads these two from the admin socket
+ok(list.find(d => d.id === dev)?.online === true, 'the device list says which phones are connected right now');
+const stt = (await admin({ op: 'status' })).find(l => l.type === 'status');
+ok(/^\d+\.\d+\.\d+/.test(stt?.version) && stt.phones_online >= 1 && stt.locked === false && /^https:\/\//.test(stt.address) && typeof stt.features?.input === 'boolean', 'the status request reports version, address, lock state, connected phones and backends');
+ok(!/secret|pubkey|token/i.test(JSON.stringify(stt)), 'and nothing secret');
 const rv = (await admin({ op: 'revoke', id: dev })).find(l => l.type === 'revoked');
 ok(rv.ok, 'revoke by id');
 await c.until(m => false, 2500); ok(c.closedCode() === 4403, `live socket closed immediately on revoke (code ${c.closedCode()})`);

@@ -60,6 +60,12 @@ sudo firewall-cmd --permanent --add-rich-rule='rule family="ipv4" source address
 
 ### 3. Pair your phone
 
+The easiest way is the **Zenvy window** that the installer adds to your launcher (or run `zenvy`):
+
+![The Zenvy desktop window: phones with their permissions, the QR code, and approving a phone](docs/media/desktop.webp)
+
+It shows whether the agent is running, lists your phones with a switch for each permission, and pairs a new phone. Everything it does is available from the terminal too, and the steps below use the terminal.
+
 1. Install the Android app (the APK from the release, or build it: [android/README.md](android/README.md)).
 2. On the PC run `zenvyd pair`. It shows a QR code.
 3. In the app tap **Scan QR code**. The phone shows a 4-digit code; the PC asks you to approve the phone only if the same code is shown there.
@@ -68,7 +74,7 @@ The phone now holds its own key and trusts exactly this PC's certificate. List o
 
 ### 4. Allow the extras
 
-A new phone gets only the basics: view, touchpad and keyboard, windows, volume and brightness. Everything else you switch on yourself, per phone:
+A new phone gets only the basics: view, touchpad and keyboard, windows, volume and brightness. Everything else you switch on yourself, per phone, in the Zenvy window (the buttons under each phone; the sensitive ones ask first) or in the terminal:
 
 ```bash
 zenvyd grant <id> screen            # screen preview (and clicking through it)
@@ -97,6 +103,7 @@ Everything optional simply turns its feature off when a tool is missing. `zenvyd
 | Brightness | `ddcutil` with DDC/CI enabled on the monitor, or a laptop backlight |
 | Desktop notices | `notify-send` (`libnotify`) |
 | Power and lock | `systemd` (`systemctl`, `loginctl`) |
+| The Zenvy window | a Wayland or X11 session with OpenGL (Mesa); `libxkbcommon` |
 
 ### Letting the agent type and click
 
@@ -149,6 +156,7 @@ Details, limits and how to report a problem: [SECURITY.md](SECURITY.md).
 | Crate | Role |
 | --- | --- |
 | `zenvyd` | the agent and its command line |
+| `zenvy-gui` (`zenvy`) | the desktop window: pairing and permissions, a front end to the agent's local admin socket |
 | `zenvy-net` | HTTPS and WebSocket server, pairing, permissions, the phone UI (`page.html`) |
 | `zenvy-hyprland` | Hyprland IPC: state and typed commands |
 | `zenvy-input`, `zenvy-audio`, `zenvy-media`, `zenvy-brightness`, `zenvy-power`, `zenvy-screen`, `zenvy-stream`, `zenvy-apps`, `zenvy-icons` | one backend each, with fakes for tests |

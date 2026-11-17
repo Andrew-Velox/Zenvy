@@ -45,8 +45,24 @@ async fn handle(app: Arc<App>, stream: UnixStream, base: String) -> std::io::Res
     let req: Value = serde_json::from_str(&line).unwrap_or(Value::Null);
     match req["op"].as_str() {
         Some("devices") => {
-            let list: Vec<Value> = app.store.lock().unwrap().list().iter().map(|d| json!({ "id": d.id, "name": d.name, "scopes": d.scopes, "created_at": d.created_at, "last_seen": d.last_seen })).collect();
+            let list: Vec<Value> = app.store.lock().unwrap().list().iter().map(|d| json!({ "id": d.id, "name": d.name, "scopes": d.scopes, "created_at": d.created_at, "last_seen": d.last_seen, "online": app.online.is_online(&d.id) })).collect();
             put(&mut w, json!({ "type": "devices", "devices": list })).await
+        }
+        Some("status") => {
+            let c = &app.cfg;
+            put(&mut w, json!({
+                "type": "status",
+                "version": env!("CARGO_PKG_VERSION"),
+                "address": base,
+                "fingerprint": app.tls_fingerprint,
+                "locked": app.is_locked(),
+                "phones_online": app.online.count(),
+                "features": {
+                    "input": app.input.is_some(), "audio": app.audio.is_some(), "media": app.media.is_some(),
+                    "brightness": app.brightness.is_some(), "listen": app.stream.is_some(), "power": app.power.is_some(),
+                    "screen": c.screen.is_some(), "apps": c.apps.is_some(), "files": c.files.is_some(), "clipboard": c.clipboard.is_some(),
+                },
+            })).await
         }
         Some("revoke") => {
             let id = req["id"].as_str().unwrap_or("");

@@ -1,6 +1,12 @@
 # Changelog
 
-## 0.1.0 (unreleased)
+## Unreleased
+
+- **Zenvy window**: a small desktop app (`zenvy`) to pair a phone with a QR code and approve it, see which phones are connected, and switch each phone's permissions (sensitive ones ask first). It only talks to the agent's local admin socket. `zenvy --pair` opens straight to the QR code.
+- The agent's admin socket reports connected phones and a status summary (`online`, `status`).
+- Android: a quick reachability check, a "Connecting" screen and automatic retry instead of a stale browser error page, and redesigned connection and pairing screens.
+
+## 0.1.0
 
 First public release.
 

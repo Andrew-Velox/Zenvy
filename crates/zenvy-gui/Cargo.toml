@@ -1,0 +1,17 @@
+[package]
+name = "zenvy-gui"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "A small desktop window for Zenvy: pair a phone, see who is connected, switch permissions"
+
+[[bin]]
+name = "zenvy"
+path = "src/main.rs"
+
+[dependencies]
+eframe = { version = "0.37.0", default-features = false, features = ["glow", "wayland", "x11", "default_fonts"] }
+png = "0.18.1"
+qrcode.workspace = true
+serde_json.workspace = true
+zenvy-proto.workspace = true

@@ -6,7 +6,7 @@ pkgdesc='Control a Hyprland PC from your phone: touchpad, keyboard, windows, med
 arch=('x86_64' 'aarch64')
 url='https://github.com/Andrew-Velox/Zenvy'
 license=('MIT')
-depends=('hyprland' 'opus' 'libgcc')
+depends=('hyprland' 'opus' 'libgcc' 'libxkbcommon' 'wayland' 'libglvnd' 'hicolor-icon-theme')
 makedepends=('cargo' 'pkgconf')
 # Arch's default LTO flags break linking the C crypto library (aws-lc) that rustls uses
 options=('!lto')
@@ -30,7 +30,7 @@ prepare() {
 build() {
   cd "Zenvy-$pkgver"
   export RUSTUP_TOOLCHAIN=stable CARGO_TARGET_DIR=target
-  cargo build --frozen --release -p zenvyd
+  cargo build --frozen --release -p zenvyd -p zenvy-gui
 }
 
 check() {
@@ -42,6 +42,9 @@ check() {
 package() {
   cd "Zenvy-$pkgver"
   install -Dm755 target/release/zenvyd "$pkgdir/usr/bin/zenvyd"
+  install -Dm755 target/release/zenvy "$pkgdir/usr/bin/zenvy"
+  install -Dm644 packaging/zenvy.desktop "$pkgdir/usr/share/applications/zenvy.desktop"
+  install -Dm644 assets/logo/zenvy-icon-512.png "$pkgdir/usr/share/icons/hicolor/512x512/apps/zenvy.png"
   install -Dm644 packaging/systemd/zenvyd.service "$pkgdir/usr/lib/systemd/user/zenvyd.service"
   install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
   install -Dm644 README.md "$pkgdir/usr/share/doc/$pkgname/README.md"
