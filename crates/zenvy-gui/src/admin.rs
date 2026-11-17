@@ -29,6 +29,7 @@ pub struct Device {
     pub id: String,
     pub name: String,
     pub scopes: Vec<String>,
+    pub created_at: Option<u64>,
     pub last_seen: Option<u64>,
     pub online: bool,
 }
@@ -85,6 +86,7 @@ pub fn parse_devices(v: &Value) -> Option<Vec<Device>> {
                                 .collect()
                         })
                         .unwrap_or_default(),
+                    created_at: d["created_at"].as_u64(),
                     last_seen: d["last_seen"].as_u64(),
                     online: d["online"].as_bool().unwrap_or(false),
                 })

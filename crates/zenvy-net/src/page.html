@@ -1449,7 +1449,8 @@ function renderSettings(){
   s.querySelectorAll('#theme button').forEach(b=>b.onclick=()=>{buzz();prefs.theme=b.dataset.v;savePrefs();syncTheme();applyTheme()});
   $('speed').oninput=e=>{prefs.speed=parseFloat(e.target.value);$('spv').textContent=prefs.speed.toFixed(1)+'×';savePrefs()};
   for(const [id,key] of [['livet','live'],['accel','accel'],['natural','natural'],['tapc','tap'],['hap','haptics'],['tabsw','tabs'],['bdsw','backdrop'],['solidsw','solid']])$(id).onchange=e=>{prefs[key]=e.target.checked;savePrefs();if(key==='haptics'&&prefs.haptics)buzz();if(key==='tabs')renderDesk();if(key==='backdrop')applyBackdrop();if(key==='solid')applySolid()};
-  const f=$('forget');if(f)f.onclick=()=>ZenvyApp.forget();
+  // forgetting the PC also tells the PC to drop this phone (otherwise pairing again lists the phone twice); never wait long for it
+  const f=$('forget');if(f)f.onclick=()=>{let gone=false;const go=()=>{if(gone)return;gone=true;ZenvyApp.forget()};rpc('unpair',{},go);setTimeout(go,1500)};
 }
 
 /* ---------- shared keyboard logic ---------- */

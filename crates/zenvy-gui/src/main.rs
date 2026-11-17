@@ -581,6 +581,8 @@ impl ZenvyApp {
     }
 
     fn phone_card(&mut self, ui: &mut egui::Ui, ctx: &egui::Context, d: &Device, p: &Palette) {
+        // two phones with the same model name (an old record and a new pairing) are told apart by when they paired
+        let twin = self.devices.iter().filter(|x| x.name == d.name).count() > 1;
         card(ui, p.container, |ui| {
             ui.horizontal(|ui| {
                 disc(ui, 46.0, p.secondary, Icon::Phone, PRIMARY);
@@ -596,6 +598,12 @@ impl ZenvyApp {
                             d.last_seen
                                 .map(|t| format!("Last seen {}", ago(now_secs().saturating_sub(t))))
                                 .unwrap_or_else(|| "Never connected".into())
+                        };
+                        let seen = match (twin, d.created_at) {
+                            (true, Some(c)) => {
+                                format!("{seen}  ·  paired {}", ago(now_secs().saturating_sub(c)))
+                            }
+                            _ => seen,
                         };
                         ui.label(RichText::new(seen).size(13.0).color(p.variant));
                     });

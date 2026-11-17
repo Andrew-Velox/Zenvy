@@ -1017,6 +1017,16 @@ ok(rv.ok, 'revoke by id');
 await c.until(m => false, 2500); ok(c.closedCode() === 4403, `live socket closed immediately on revoke (code ${c.closedCode()})`);
 let again = await wsConnect(phone, dev); await again.until(m => false, 3000); ok(again.closedCode() === 4401, 'revoked device cannot reconnect');
 
+console.log('== a phone that forgets the PC removes itself');
+{ const ph = await newPhone(); const pr = await startPairing(ph, { approve: true, name: 'Forgetful Phone' });
+  const id2 = pr.json.device_id; const cs = await wsConnect(ph, id2); await cs.until(m => m.t === 'snapshot');
+  cs.send({ t: 'unpair', id: 'u1', data: {} }); const ans = await cs.until(m => m.id === 'u1');
+  ok(ans?.t === 'ack', 'the phone is told it was removed');
+  await cs.until(m => false, 1500);
+  const l2 = (await admin({ op: 'devices' })).find(l => l.type === 'devices').devices;
+  ok(!l2.some(d => d.id === id2), 'and the PC no longer lists it (so pairing again does not show it twice)');
+  ok(cs.closedCode() !== null, 'its socket is closed'); }
+
 console.log('== rate limiting');
 let limited = false;
 for (let i = 0; i < 12 && !limited; i++) { const rr = await req('/api/pair', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ secret: 'guess' + i, name: 'x', pubkey: b64u(new Uint8Array(32)) }) }); limited = rr.status === 429; }

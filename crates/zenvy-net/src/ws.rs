@@ -415,6 +415,24 @@ async fn handle(app: &Arc<App>, ctx: &mut Ctx, m: Msg) -> (Option<Value>, bool) 
     }
     match m.t.as_str() {
         "ping" => (Some(json!({ "v": 1, "t": "pong", "id": id })), false),
+        "unpair" => {
+            // "Forget this PC" on the phone: the phone removes itself, so the PC does not keep a record of a key that no
+            // longer exists (and a phone that pairs again does not show up twice). It needs no permission: any phone may
+            // remove itself, and only itself.
+            let removed = app
+                .store
+                .lock()
+                .unwrap()
+                .revoke(&ctx.device_id)
+                .ok()
+                .flatten();
+            if let Some(d) = removed {
+                app.audit
+                    .record("revoke", Some(&d.id), "by the phone itself");
+                let _ = app.hub.send(Hub::Revoked(d.id.clone()));
+            }
+            (Some(ack()), false)
+        }
         "cmd" => {
             let cmd: DesktopCommand = match serde_json::from_value(m.data) {
                 Ok(c) => c,
