@@ -4,9 +4,9 @@
 
 Control your Hyprland PC from your phone. Touchpad, keyboard, windows and workspaces, media, volume, brightness, a live screen you can tap through, files, clipboard, power and unlock. No cloud, no account, no telemetry: the phone talks straight to the PC over your own network.
 
-<p align="center"><img src="docs/media/demo.webp" width="880" alt="Demo: the Zenvy app next to a Hyprland desktop. Switching workspaces, opening an app on a new workspace, moving a window, touchpad, typing, volume, the live screen and its floating window, lock and unlock"></p>
+<p align="center"><img src="docs/media/demo.webp" width="880" alt="Demo, recorded for real: the Zenvy app on a phone next to the Hyprland desktop it controls. Switching workspaces, opening VLC on a new workspace, moving it, the touchpad, typing into a terminal, the live screen with a click through it, and the floating screen window"></p>
 
-<p align="center"><sub>The phone shows the real app. The desktop beside it is a simulation answering the same messages, so every tap has the effect it has on a real PC.</sub></p>
+<p align="center"><sub>Recorded on a real phone and a real Hyprland desktop at the same time. The blue rings are where a finger touched the phone.</sub></p>
 
 ![The five main screens: Desk, Touchpad, Keyboard, Media and Screen](docs/media/tabs.webp)
 
@@ -175,7 +175,7 @@ node tests/typing.mjs && node tests/worklet.mjs
 (cd android && ./gradlew testDebugUnitTest assembleDebug)
 ```
 
-The end-to-end suite only touches scratch windows named `zenvy-*`, uses fake `systemctl`, `loginctl`, `grim`, `wl-copy` and friends (it never suspends your PC or captures your screen), and refuses to run if a real `zenvyd` is running. See [CONTRIBUTING.md](CONTRIBUTING.md). The screenshots come from the UI's built-in demo mode (`tools/screenshots.mjs`); the demo animation is the real page talking to a simulated desktop (`tools/demo.mjs`, `tools/demo/stage.html`). Releases: [docs/RELEASING.md](docs/RELEASING.md), [docs/REPRODUCIBLE.md](docs/REPRODUCIBLE.md).
+The end-to-end suite only touches scratch windows named `zenvy-*`, uses fake `systemctl`, `loginctl`, `grim`, `wl-copy` and friends (it never suspends your PC or captures your screen), and refuses to run if a real `zenvyd` is running. See [CONTRIBUTING.md](CONTRIBUTING.md). The screenshots come from the UI's built-in demo mode (`tools/screenshots.mjs`). The demo animation is recorded for real by `tools/real-demo/` (it drives a phone over adb and records the desktop with `wf-recorder`); `tools/demo.mjs` makes a simulated version that needs no hardware. Releases: [docs/RELEASING.md](docs/RELEASING.md), [docs/REPRODUCIBLE.md](docs/REPRODUCIBLE.md).
 
 ## Uninstall
 
