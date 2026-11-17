@@ -38,10 +38,11 @@ if (clients().filter(c => c.workspace.id === WS_TERM && c.class === 'kitty').len
 
 // ---- everything is put back whatever happens
 const original = { ws: activeWs(), cursor: cursor(), volume: sysVol(), vlcStatus: vlc('status'), vlcPos: vlc('position') };
-let pc, phone;
+let pc, phone, imageWin = null;
 async function restore() {
   try { if (pc && pc.exitCode === null) { pc.kill('SIGINT'); await Promise.race([new Promise(r => pc.once('exit', r)), sleep(6000)]); } } catch {}
   try { if (phone) await phone.ev(`(() => { if (scrOn) stopScreen(false); return 1; })()`); } catch {}
+  for (const c of clients()) if (/swappy/i.test(c.class)) zdev('close', c.address);
   if (original.vlcStatus === 'Paused') vlc('pause');
   if (original.vlcPos) vlc('position', original.vlcPos);
   if (original.volume && sysVol() !== original.volume) run('pactl', ['set-sink-volume', '@DEFAULT_SINK@', original.volume + '%']);
@@ -51,6 +52,8 @@ async function restore() {
 process.on('SIGINT', async () => { await restore(); process.exit(1); });
 
 const timeline = [], blurs = [];
+// on workspace 3: the address bar shows the user name, and a notes widget on the wallpaper shows through the translucent windows
+const FILES_BLUR = [[200, 56, 430, 44], [1568, 562, 304, 270]];
 let T0 = 0, pcSpawn = 0;
 const at = () => (Date.now() - T0) / 1000;
 const caption = (a, b = '') => timeline.push({ t: at(), a, b });
@@ -60,7 +63,7 @@ let in3 = null;
 const goWs = async (phoneObj, n) => {
   await phoneObj.tap(`[data-ws="${n}"]`); await until(() => activeWs() === n, 5000, 'workspace ' + n);
   if (n === WS_FILES && in3 === null) in3 = at() - 0.6;
-  if (n !== WS_FILES && in3 !== null) { blurs.push({ region: [200, 56, 430, 44], from: Math.max(0, in3), to: at() + 1.4 }); in3 = null; }
+  if (n !== WS_FILES && in3 !== null) { for (const r of FILES_BLUR) blurs.push({ region: r, from: Math.max(0, in3), to: at() + 1.4 }); in3 = null; }
 };
 
 try {
@@ -90,14 +93,14 @@ try {
   if (activeWin().address !== term.address) { zdev('focus', term.address); await sleep(500); }
   if (activeWin().address !== term.address) throw new Error('the terminal is not focused: refusing to type');
   await phone.focusQuietly('#kb'); await sleep(600);
-  for (const line of ['cd /tmp', 'echo Hello from my phone', 'date']) {
+  for (const line of ['echo Hello from my phone', 'echo Typed on a phone, run on the PC', 'date']) {
     if (activeWin().address !== term.address) throw new Error('focus left the terminal: refusing to type');
     await phone.type(line, 150); await sleep(350); phone.enter(); await sleep(1100);
   }
   await phone.ev('(document.activeElement && document.activeElement.blur(), 1)'); await sleep(700);
 
-  // 3. the pointer, in the file manager
-  caption('Touchpad: move, point and click', 'Move the pointer over the wallpapers and click one.');
+  // 3. the pointer, in the file manager: select, double-click to open, close it from the phone, right-click for the menu
+  caption('Touchpad: move, click, double-click', 'Select a wallpaper, double-click to open it, right-click for the menu.');
   await phone.tap('#nav [data-tab=pad]'); await sleep(700);
   await goWs(phone, WS_FILES); await sleep(1200);
   const pad = await phone.center('#padwrap');
@@ -113,9 +116,23 @@ try {
     }
   };
   const click = async () => { await phone.ripple(pad.x, pad.y); phone.tapXY(pad.x, pad.y); mark('click'); await sleep(900); };
-  await steerTo(434, 266); await click(); await sleep(800);       // nature1
-  await steerTo(1120, 266); await click(); await sleep(900);      // stay-vigil-by-pndora
-  await steerTo(300, 700); await click(); await sleep(900);       // empty space: deselects
+  await steerTo(434, 266); await click(); await sleep(700);                         // select nature1
+  await steerTo(993, 266); await sleep(500);                                          // purple-nature
+  for (let tries = 0; tries < 3 && !clients().some(c => /swappy/i.test(c.class)); tries++) {
+    if (tries) await steerTo(993, 266);                                               // a try that did not open: aim again
+    await phone.doubleTap(pad.x, pad.y); mark('double-click');
+    for (let i = 0; i < 25 && !clients().some(c => /swappy/i.test(c.class)); i++) await sleep(120);
+  }
+  await until(() => clients().some(c => /swappy/i.test(c.class)), 4000, 'the wallpaper to open');
+  imageWin = clients().find(c => /swappy/i.test(c.class)); await sleep(3500);
+  // close it from the phone's window list (tap the cross, tap again to confirm)
+  await phone.tap('#nav [data-tab=desk]'); await sleep(900);
+  await phone.tapTwice(`[data-close="${imageWin.address}"]`); mark('close window');
+  await until(() => !clients().some(c => c.address === imageWin.address), 5000, 'the image window to close'); imageWin = null; await sleep(1200);
+  await phone.tap('#nav [data-tab=pad]'); await sleep(900);
+  await steerTo(1411, 266); await sleep(500);                                         // stay-vigil
+  await phone.tap('#br'); mark('right-click'); await sleep(2800);                     // the context menu
+  await steerTo(1500, 840); await click(); await sleep(800);                          // click empty space: the menu closes
 
   // 4. media: VLC on workspace 4
   caption('Media and volume', 'Play, skip around, set the volume.');
@@ -136,18 +153,25 @@ try {
 
   // 6. the mirror floats over every tab and follows the workspaces
   caption('A floating screen window', 'It stays on top of every tab and follows you between workspaces.');
-  await phone.tap('#nav [data-tab=pad]'); await phone.waitFor('#sc-mini'); await sleep(1500);
+  // the window remembers where it was dragged last; earlier runs may have left it up under the header, out of reach
+  const resetMini = () => phone.ev('(() => { prefs.mini = { w: 200 }; savePrefs(); miniPlace(); })()');
+  await resetMini();
+  await phone.tap('#nav [data-tab=pad]'); await phone.waitFor('#sc-mini'); await sleep(1800);
+  { // drag it to a spot well inside the touchpad area (never up under the header or the chips)
+    const m = await phone.center('#sc-mini'), g = await phone.center('#sc-grip'), pd = await phone.center('#padwrap');
+    const wantLeft = pd.left + pd.w * 0.08, wantTop = pd.top + pd.h * 0.3;
+    await phone.swipe(g.x, g.y, g.x + (wantLeft - m.left), g.y + (wantTop - m.top), 900); mark('drag mini'); await sleep(2200); }
   await goWs(phone, WS_FILES); await sleep(2000);
   await goWs(phone, WS_TERM); await sleep(1800);
-  { const g = await phone.center('#sc-grip'); await phone.swipe(g.x - 40, g.y, g.x - 330, g.y - 600, 800); mark('drag mini'); await sleep(1800); }
   await phone.tap('#sc-mx'); await sleep(900);
+  await resetMini();
 
   caption('Zenvy', 'Open source. No cloud, no account, no telemetry.');
   await sleep(2600);
   mark('end');
 } finally {
   const dur = at();
-  if (in3 !== null) blurs.push({ region: [200, 56, 430, 44], from: Math.max(0, in3), to: dur });
+  if (in3 !== null) for (const r of FILES_BLUR) blurs.push({ region: r, from: Math.max(0, in3), to: dur });
   if (phone) phone.stopScreencast();
   writeFileSync(join(OUT, 'timeline.json'), JSON.stringify({ duration: dur, t0: T0, pcSpawn, events: timeline, blurs, frames: phone ? phone.frames : [] }, null, 1));
   await restore();

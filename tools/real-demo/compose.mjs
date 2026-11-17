@@ -46,7 +46,7 @@ const caps = tl.events.filter(e => e.a).map((e, i, a) => ({ ...e, end: i + 1 < a
 caps.forEach((c, i) => { writeFileSync(join(OUT, `cap${i}a.txt`), c.a); writeFileSync(join(OUT, `cap${i}b.txt`), c.b || ''); });
 
 // ---- the bezels, drawn once
-const PW = 840, PH = Math.round(PW * (1080 - CROP_TOP) / 1920), PX = 28, PY = 78, PHX = 928, PHY = 24, PHH = 672, PHW = Math.round(PHH * 540 / 1170);
+const PW = 880, PH = Math.round(PW * (1080 - CROP_TOP) / 1920), PX = 24, PY = 66, PHX = 948, PHY = 34, PHH = 650, PHW = Math.round(PHH * 540 / 1170);
 const frame = join(OUT, 'frame.png');
 const m = (...a) => execFileSync('magick', a);
 m('-size', '1280x720', 'xc:none', '-fill', '#1D1D1F',
@@ -93,8 +93,8 @@ let f = `color=c=0xF5F5F7:s=1280x720:r=15:d=${dur.toFixed(2)}[bg];` +
   `drawtext=fontfile=${FONT_R}:text='your phone controls your Hyprland PC':fontcolor=0x6e6e73:fontsize=17:x=156:y=27`;
 caps.forEach((c, i) => {
   const en = `enable='between(t,${c.t.toFixed(2)},${c.end.toFixed(2)})'`;
-  f += `,drawtext=fontfile=${FONT_B}:textfile=${join(OUT, `cap${i}a.txt`)}:fontcolor=0x1D1D1F:fontsize=30:x=${PX}:y=590:${en}`;
-  f += `,drawtext=fontfile=${FONT_R}:textfile=${join(OUT, `cap${i}b.txt`)}:fontcolor=0x6e6e73:fontsize=19:x=${PX}:y=636:${en}`;
+  f += `,drawtext=fontfile=${FONT_B}:textfile=${join(OUT, `cap${i}a.txt`)}:fontcolor=0x1D1D1F:fontsize=30:x=${PX}:y=610:${en}`;
+  f += `,drawtext=fontfile=${FONT_R}:textfile=${join(OUT, `cap${i}b.txt`)}:fontcolor=0x6e6e73:fontsize=19:x=${PX}:y=654:${en}`;
 });
 f += `,drawtext=fontfile=${FONT_R}:text='Recorded on a real phone and a real Hyprland desktop, at the same time':fontcolor=0xa1a1a6:fontsize=13:x=${PX}:y=690[v0];${speedChain}[v1]fps=${process.env.FPS || 12},scale=${process.env.WIDTH || 1000}:-2:flags=lanczos[v]`;
 mkdirSync(dirname(FINAL), { recursive: true });

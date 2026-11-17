@@ -74,6 +74,37 @@ export class Phone {
     await sleep(300);
   }
 
+  /** Taps the same spot twice from one adb command, about a second apart (for "tap to arm, tap again to confirm"). */
+  async tapTwice(sel) {
+    await this.waitFor(sel); const c = await this.center(sel);
+    this.must(); await this.ripple(c.x, c.y);
+    const [x, y] = [Math.round(c.x), Math.round(c.y)];
+    adb('shell', `input tap ${x} ${y}; sleep 0.3; input tap ${x} ${y}`);
+  }
+
+  /** Sends any DevTools command and waits for its answer. */
+  cdp(method, params = {}) {
+    return new Promise((res, rej) => {
+      const id = ++this.n; this.pending.set(id, m => m.error ? rej(new Error(method + ': ' + m.error.message)) : res(m.result));
+      this.ws.send(JSON.stringify({ id, method, params }));
+    });
+  }
+
+  /**
+   * A double tap. `adb shell input tap` takes most of a second per tap on some phones and the shell may not write to the
+   * touchscreen, so the two quick touches go through the app's debug connection (the same touch events a finger makes, with
+   * exact timing): two touches within Dolphin's double-click time.
+   */
+  async doubleTap(x, y, gapMs = 90) {
+    this.must(); await this.ripple(x, y);
+    const pt = [{ x: (x - this.offX) / this.dpr, y: (y - this.offY) / this.dpr, id: 1 }];
+    for (let i = 0; i < 2; i++) {
+      await this.cdp('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: pt }); await sleep(45);
+      await this.cdp('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+      if (i === 0) await sleep(gapMs);
+    }
+  }
+
   /** Draws a ring where a real touch lands (the recording has no touch indicator of its own). Takes screen pixels. */
   async ripple(x, y) {
     const cx = (x - this.offX) / this.dpr, cy = (y - this.offY) / this.dpr;
