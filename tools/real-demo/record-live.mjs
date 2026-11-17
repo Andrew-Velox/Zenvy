@@ -37,7 +37,7 @@ if (/claude|adaptive hyprland/i.test(term.title)) throw new Error('the terminal 
 if (clients().filter(c => c.workspace.id === WS_TERM && c.class === 'kitty').length !== 1) throw new Error('more than one terminal on workspace 1');
 
 // ---- everything is put back whatever happens
-const original = { ws: activeWs(), cursor: cursor(), volume: sysVol(), vlcStatus: vlc('status'), vlcPos: vlc('position') };
+const original = { ws: activeWs(), cursor: cursor(), volume: sysVol(), vlcStatus: vlc('status'), vlcPos: vlc('position'), vlcVol: vlc('volume') };
 let pc, phone, imageWin = null;
 async function restore() {
   try { if (pc && pc.exitCode === null) { pc.kill('SIGINT'); await Promise.race([new Promise(r => pc.once('exit', r)), sleep(6000)]); } } catch {}
@@ -45,6 +45,7 @@ async function restore() {
   for (const c of clients()) if (/swappy/i.test(c.class)) zdev('close', c.address);
   if (original.vlcStatus === 'Paused') vlc('pause');
   if (original.vlcPos) vlc('position', original.vlcPos);
+  if (original.vlcVol) vlc('volume', original.vlcVol);
   if (original.volume && sysVol() !== original.volume) run('pactl', ['set-sink-volume', '@DEFAULT_SINK@', original.volume + '%']);
   zdev('switch-workspace', String(original.ws));
   moveCursor(...original.cursor);
@@ -135,11 +136,15 @@ try {
   await steerTo(1500, 840); await click(); await sleep(800);                          // click empty space: the menu closes
 
   // 4. media: VLC on workspace 4
-  caption('Media and volume', 'Play, skip around, set the volume.');
+  caption('Media and volume', 'Play, skip, and set the player volume and the PC volume separately.');
   await goWs(phone, WS_VIDEO); await sleep(1000);
   await phone.tap('#nav [data-tab=media]'); await sleep(1000);
   await phone.tap('.mplay'); mark('play'); await until(() => vlc('status') === 'Playing', 5000, 'VLC to play'); await sleep(3500);
   for (let i = 0; i < 2; i++) { await phone.tap('button[aria-label="Forward 10 seconds"]'); mark('seek'); await sleep(1500); }
+  { const pv = await phone.center('#pvol'); const px = f => pv.left + pv.w * f;   // the player's own volume
+    await phone.swipe(px(0.97), pv.y, px(0.40), pv.y, 800); mark('player volume down'); await sleep(1500);
+    await phone.swipe(px(0.40), pv.y, px(0.97), pv.y, 800); mark('player volume up'); await sleep(1300); }
+  await phone.ev("document.getElementById('vol').scrollIntoView({ block: 'center', behavior: 'smooth' })"); await sleep(1200);   // the PC volume sits below the player volume
   { const v = await phone.center('#vol'); const x = f => v.left + v.w * f;
     await phone.swipe(x(0.60), v.y, x(0.33), v.y, 800); mark('volume down'); await sleep(1500);
     await phone.swipe(x(0.33), v.y, x(0.60), v.y, 800); mark('volume up'); await sleep(1400); }

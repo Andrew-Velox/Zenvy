@@ -4,9 +4,9 @@
 
 Control your Hyprland PC from your phone. Touchpad, keyboard, windows and workspaces, media, volume, brightness, a live screen you can tap through, files, clipboard, power and unlock. No cloud, no account, no telemetry: the phone talks straight to the PC over your own network.
 
-<p align="center"><img src="docs/media/demo.webp" width="880" alt="Demo, recorded for real: the Zenvy app on a phone next to the Hyprland desktop it controls. Switching workspaces, opening VLC on a new workspace, moving it, the touchpad, typing into a terminal, the live screen with a click through it, and the floating screen window"></p>
+<p align="center"><img src="docs/media/demo.webp" width="880" alt="Demo, recorded for real: the Zenvy app on a phone next to the whole Hyprland desktop it controls. Switching workspaces, typing into a terminal, moving the pointer in a file manager to open a wallpaper and right-click, playing a video with separate player and PC volume, the live screen with a click through it, and the floating screen window"></p>
 
-<p align="center"><sub>Recorded on a real phone and a real Hyprland desktop at the same time. The blue rings are where a finger touched the phone.</sub></p>
+<p align="center"><sub>Recorded on a real phone and a real Hyprland desktop at the same time. The blue rings are where a finger touched the phone. The video is <i>Big Buck Bunny</i>, © Blender Foundation | www.bigbuckbunny.org, <a href="https://creativecommons.org/licenses/by/3.0/">CC BY 3.0</a>.</sub></p>
 
 ![The five main screens: Desk, Touchpad, Keyboard, Media and Screen](docs/media/tabs.webp)
 
@@ -16,7 +16,7 @@ Control your Hyprland PC from your phone. Touchpad, keyboard, windows and worksp
 - **Open apps anywhere**: the `+` next to the workspaces lists your installed apps; one tap switches to the first empty workspace and starts the app there.
 - **Touchpad and keyboard**: pointer, scroll, clicks, drag; live typing with any layout and Unicode, shortcuts and special keys.
 - **Screen**: a live preview of any monitor you can tap, long-press and double-tap to click. It floats as a draggable, resizable window over every other tab. Monitor brightness lives here too.
-- **Media**: player controls, volume, and the **phone speaker**: the PC's sound played on your phone.
+- **Media**: player controls, the **player's own volume** and the PC volume as two separate sliders, and the **phone speaker**: the PC's sound played on your phone.
 - **Files and clipboard**: send files both ways, copy text to the PC clipboard, share a link from any phone app to open it on the PC.
 - **Power and lock**: lock, sleep, restart, power off (with confirmation and a countdown). When the PC is locked, the phone mirrors the lock screen and can type the password.
 - **Private by design**: each feature beyond the basics is a permission you grant per phone, and a locked PC refuses everything but media, volume, brightness, power and unlock.
