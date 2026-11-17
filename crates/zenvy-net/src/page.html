@@ -226,6 +226,7 @@ button:disabled{opacity:.38;pointer-events:none}
 .mbtn{width:56px;height:56px;border-radius:28px;display:grid;place-items:center;background:var(--secondary-c);color:var(--on-secondary-c)}
 .mplay{width:72px;height:72px;border-radius:36px;display:grid;place-items:center;background:var(--primary);color:var(--on-primary)}
 .mplay .i{width:32px;height:32px;fill:currentColor}
+.pvol{display:flex;align-items:center;gap:12px;margin-top:16px}.pvol .i{flex:none;color:var(--on-surface-v)}.pvol input[type=range]{flex:1;min-width:0;width:auto}.pvol .val{flex:none;width:44px;text-align:right;font-style:normal;font-size:14px;color:var(--on-surface-v);font-variant-numeric:tabular-nums}
 .mseek{display:flex;justify-content:center;gap:24px;margin-top:16px}.mseek .ibtn{width:56px;height:56px;border-radius:28px;color:var(--on-surface)}.mseek .ibtn:disabled{opacity:.38}.mseek .ibtn .i{width:28px;height:28px}
 .volrow{display:flex;align-items:center;gap:12px}
 .tonal{background:var(--secondary-c);color:var(--on-secondary-c)}
@@ -577,7 +578,7 @@ const kv={get:async k=>{const d=await idb();return new Promise((ok,no)=>{const q
 
 let ws,state=null,caps=null,manifest=null,backoff=500,armed=null,tab='pad',pingT=0,pings={},rtt=null,view='gate';
 let browser={browsers:[]},setupOpen=false,snackT=0;
-let brDrag=false,bright=null,audio=null,media=null,mediaSel=null,mediaAt=0,volDrag=false,progT=0;
+let brDrag=false,bright=null,audio=null,media=null,mediaSel=null,mediaAt=0,volDrag=false,pvolDrag=false,progT=0;
 const openTabs=new Set((()=>{try{return JSON.parse(ls.get('opentabs')||'[]')}catch(e){return []}})());
 const saveOpen=()=>ls.set('opentabs',JSON.stringify([...openTabs]));
 function snack(msg){const t=$('snack');t.textContent=msg;t.hidden=false;clearTimeout(snackT);snackT=setTimeout(()=>{t.hidden=true},2800)}
@@ -671,7 +672,7 @@ async function connect(){
     else if(m.t==='evt'&&m.data.topic.startsWith('power.')&&onPowerEvent(m.data.topic,m.data.value)){}
     else if(m.t==='listen'){if(m.data&&m.data.state==='stopped'){stopListenLocal(m.data.reason||'')}else if(m.data&&m.data.state==='started'){listenState='on';listenErr='';renderListen()}}
     else if(m.t==='err'&&m.id==='listen-start'){stopListenLocal('');listenErr=(m.data&&m.data.message)||'Could not start';renderListen()}
-    else if(m.t==='evt'&&m.data.topic==='media.state'){media=m.data.value;mediaAt=Date.now();if(view==='media')renderMedia();if(view==='lock')renderLockScreen()}
+    else if(m.t==='evt'&&m.data.topic==='media.state'){media=m.data.value;mediaAt=Date.now();if(view==='media'&&!pvolDrag)renderMedia();if(view==='lock')renderLockScreen()}
     else if(m.t==='evt'&&m.data.topic==='brightness.state'){bright=m.data.value;if(view==='screen'&&!brDrag)renderBright();if(view==='lock'&&!brDrag)renderLockScreen()}
     else if(m.t==='evt'&&m.data.topic==='audio.state'){audio=m.data.value;if(view==='media'&&!volDrag)renderAudio();if(view==='lock'&&!volDrag)renderLockScreen()}
     else if(m.t==='evt'&&m.data.topic==='browser.tabs'){browser=m.data.value;renderDesk()}
@@ -855,8 +856,13 @@ function renderMedia(){
     '<div class="mctl"><button class="mbtn" data-m="prev" aria-label="Previous"'+(p.can_prev?'':' disabled')+'>'+ic('prev')+'</button>'+
     '<button class="mplay" data-m="pp" aria-label="'+(p.status==='playing'?'Pause':'Play')+'">'+ic(p.status==='playing'?'pause':'play')+'</button>'+
     '<button class="mbtn" data-m="next" aria-label="Next"'+(p.can_next?'':' disabled')+'>'+ic('next')+'</button></div>'+
-    '<div class="mseek"><button class="ibtn" data-m="b10" aria-label="Back 10 seconds"'+(p.can_seek?'':' disabled')+'>'+ic('rew10')+'</button><button class="ibtn" data-m="f10" aria-label="Forward 10 seconds"'+(p.can_seek?'':' disabled')+'>'+ic('fwd10')+'</button></div></div>';
+    '<div class="mseek"><button class="ibtn" data-m="b10" aria-label="Back 10 seconds"'+(p.can_seek?'':' disabled')+'>'+ic('rew10')+'</button><button class="ibtn" data-m="f10" aria-label="Forward 10 seconds"'+(p.can_seek?'':' disabled')+'>'+ic('fwd10')+'</button></div>'+
+    (p.volume!=null?'<div class="pvol"><span class="i" aria-hidden="true">'+ic('media')+'</span><input type="range" id="pvol" min="0" max="100" step="1" value="'+p.volume+'" aria-label="Volume of '+esc(p.identity)+'"><em class="val" id="pvolv">'+p.volume+'%</em></div>':'')+'</div>';
   el.innerHTML=h;updateProgress();
+  const pv=$('pvol');
+  if(pv){let t=0,pend=null;
+    pv.oninput=e=>{pvolDrag=true;const v=+e.target.value;$('pvolv').textContent=v+'%';pend=v;if(!t)t=setTimeout(()=>{t=0;if(pend!==null){sendMedia({cmd:'set_volume',player:p.id,percent:pend});pend=null}},60)};
+    pv.onchange=e=>{clearTimeout(t);t=0;pend=null;p.volume=+e.target.value;sendMedia({cmd:'set_volume',player:p.id,percent:p.volume});buzz();setTimeout(()=>{pvolDrag=false},600)}}
   const go=(data)=>{buzz();sendMedia({...data,player:p.id})};
   el.querySelectorAll('[data-pl]').forEach(b=>b.onclick=()=>{buzz();mediaSel=b.dataset.pl;renderMedia()});
   el.querySelectorAll('[data-m]').forEach(b=>b.onclick=()=>{const k=b.dataset.m;
@@ -869,7 +875,7 @@ function renderAudio(){
   const el=$('m-audio');
   if(!audio){el.innerHTML='';return}
   const o=audio.output,mic=audio.mic;
-  el.innerHTML='<div class="card"><div class="slrow"><button class="ibtn tonal'+(o&&o.muted?' off':'')+'" id="mutebtn" aria-label="'+(o&&o.muted?'Unmute':'Mute')+'"'+(o?'':' disabled')+'>'+ic(o&&o.muted?'mute':'vup')+'</button><input type="range" id="vol" min="0" max="100" step="1" value="'+Math.min(100,o?o.volume:0)+'"'+(o?'':' disabled')+' aria-label="Volume"><em class="val" id="volv">'+(o?o.volume+'%':'')+'</em></div>'+
+  el.innerHTML='<div class="card"><div class="slrow"><button class="ibtn tonal'+(o&&o.muted?' off':'')+'" id="mutebtn" aria-label="'+(o&&o.muted?'Unmute':'Mute')+'"'+(o?'':' disabled')+'>'+ic(o&&o.muted?'mute':'vup')+'</button><input type="range" id="vol" min="0" max="100" step="1" value="'+Math.min(100,o?o.volume:0)+'"'+(o?'':' disabled')+' aria-label="PC volume"><em class="val" id="volv">'+(o?o.volume+'%':'')+'</em></div>'+
     (mic?'<div class="slrow"><button class="ibtn tonal'+(mic.muted?' off':'')+'" id="micmute" aria-label="'+(mic.muted?'Unmute microphone':'Mute microphone')+'">'+ic(mic.muted?'micoff':'mic')+'</button><span class="nm">'+esc(mic.description)+'</span></div>':'')+'</div>'+
     (audio.outputs.length>1?'<div class="card" style="margin-top:12px">'+audio.outputs.map(x=>'<button class="radio'+(x.default?' on':'')+'" data-out="'+esc(x.name)+'">'+ic(outIcon(x.description||x.name))+'<span class="li-txt"><b>'+esc(x.description||x.name)+'</b></span><span class="rd"></span></button>').join('')+'</div>':'');
   const vol=$('vol');
@@ -1609,7 +1615,7 @@ tab=prefs.lastTab||'pad';
         {id:14,window_id:1,title:'Inbox (3)',host:'mail.google.com',active:false,pinned:true,audible:false}]}]}]};
       audio={output:{name:'alsa_output.usb',description:'Rapoo Gaming Headset Analog Stereo',volume:60,muted:false},mic:{name:'alsa_input.usb',description:'Rapoo Gaming Headset Mono',volume:67,muted:false},
         outputs:[{name:'alsa_output.usb',description:'Rapoo Gaming Headset Analog Stereo',default:true},{name:'alsa_output.hdmi',description:'Radeon HDMI Digital Stereo (MSI MP225)',default:false},{name:'audiorelay_Speaker',description:'AudioRelay Speaker',default:false}]};
-      media={current:'org.mpris.MediaPlayer2.spotify',players:[{id:'org.mpris.MediaPlayer2.spotify',identity:'Spotify',status:'playing',title:'Night Drive',artist:'Moderator',album:'Bad Kingdom',length_ms:215000,position_ms:83000,can_next:true,can_prev:true,can_seek:true},
+      media={current:'org.mpris.MediaPlayer2.spotify',players:[{id:'org.mpris.MediaPlayer2.spotify',identity:'Spotify',volume:80,status:'playing',title:'Night Drive',artist:'Moderator',album:'Bad Kingdom',length_ms:215000,position_ms:83000,can_next:true,can_prev:true,can_seek:true},
         {id:'org.mpris.MediaPlayer2.brave.instance1',identity:'Brave',status:'paused',title:'Lofi beats to code to',artist:'',album:'',length_ms:null,position_ms:null,can_next:false,can_prev:false,can_seek:false}]};mediaAt=Date.now();
       caps.capabilities['audio.listen']={state:'available',backend:'parec'};
       bright={displays:[{id:'ddc:2',name:'HDMI-A-1',model:'MSI MP225',kind:'ddc',percent:70}]};

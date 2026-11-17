@@ -82,6 +82,9 @@ pub struct MediaPlayer {
     pub can_next: bool,
     pub can_prev: bool,
     pub can_seek: bool,
+    /// The player's own volume (MPRIS `Volume`, 0 to 100), when it has one. Separate from the PC's master volume.
+    #[serde(default)]
+    pub volume: Option<u8>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -107,10 +110,24 @@ pub fn valid_player_id(s: &str) -> bool {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "cmd", rename_all = "snake_case")]
 pub enum MediaCommand {
-    PlayPause { player: String },
-    Next { player: String },
-    Previous { player: String },
-    SeekBy { player: String, offset_ms: i64 },
+    PlayPause {
+        player: String,
+    },
+    Next {
+        player: String,
+    },
+    Previous {
+        player: String,
+    },
+    SeekBy {
+        player: String,
+        offset_ms: i64,
+    },
+    /// The player's own volume, 0 to 100.
+    SetVolume {
+        player: String,
+        percent: u8,
+    },
 }
 
 impl MediaCommand {
@@ -119,7 +136,8 @@ impl MediaCommand {
             Self::PlayPause { player }
             | Self::Next { player }
             | Self::Previous { player }
-            | Self::SeekBy { player, .. } => player,
+            | Self::SeekBy { player, .. }
+            | Self::SetVolume { player, .. } => player,
         }
     }
 
@@ -131,6 +149,7 @@ impl MediaCommand {
             Self::SeekBy { offset_ms, .. } if offset_ms.abs() > MAX_SEEK_MS => {
                 Err("seek too large")
             }
+            Self::SetVolume { percent, .. } if *percent > 100 => Err("volume out of range"),
             _ => Ok(()),
         }
     }
@@ -222,6 +241,15 @@ mod tests {
             );
         }
         assert!(parse::<MediaCommand>(r#"{"cmd":"call","method":"Quit"}"#).is_err());
+        let v = |percent: u8| MediaCommand::SetVolume {
+            player: p.into(),
+            percent,
+        };
+        assert!(v(0).validate().is_ok() && v(100).validate().is_ok());
+        assert!(
+            v(101).validate().is_err(),
+            "a player volume over 100 is refused"
+        );
     }
 }
 

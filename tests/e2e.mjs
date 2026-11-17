@@ -977,13 +977,16 @@ else {
   ok(await pollA(() => lastEvtM('media.state')?.players?.[0]?.status === 'playing'), 'the phone is pushed the new playback status (event driven)');
   sendMc('m2', { cmd: 'next', player: P }); sendMc('m3', { cmd: 'previous', player: P }); sendMc('m4', { cmd: 'seek_by', player: P, offset_ms: -10000 });
   ok(await pollA(() => ['Next', 'Previous', 'Seek -10000000'].every(x => lines('player.log').includes(x))), 'next, previous and seek (milliseconds -> microseconds) reach the player');
+  ok(pl.volume === 50, "the snapshot carries the player's own volume (50%)");
+  sendMc('m5', { cmd: 'set_volume', player: P, percent: 30 });
+  ok(await pollA(() => lines('player.log').includes('Volume 30')) && await pollA(() => lastEvtM('media.state')?.players?.[0]?.volume === 30), "set_volume changes the player's own volume and the phone is told");
   for (const [id, data, code, why] of [['n1', { cmd: 'play_pause', player: 'org.mpris.MediaPlayer2.notrunning' }, 'failed', 'a player that is not running'],
       ['n2', { cmd: 'play_pause', player: 'org.freedesktop.systemd1' }, 'invalid_command', 'a non-player bus name'], ['n3', { cmd: 'play_pause', player: 'org.mpris.MediaPlayer2.x;rm' }, 'invalid_command', 'a player name with shell characters'],
-      ['n4', { cmd: 'seek_by', player: P, offset_ms: 99999999 }, 'invalid_command', 'an absurd seek'], ['n5', { cmd: 'call', method: 'Quit', player: P }, 'invalid_command', 'an arbitrary D-Bus method']]) {
+      ['n4', { cmd: 'seek_by', player: P, offset_ms: 99999999 }, 'invalid_command', 'an absurd seek'], ['n6', { cmd: 'set_volume', player: P, percent: 150 }, 'invalid_command', 'a player volume above 100'], ['n5', { cmd: 'call', method: 'Quit', player: P }, 'invalid_command', 'an arbitrary D-Bus method']]) {
     sendMc(id, data); const r = await cm.until(m => m.id === id);
     ok(r?.t === 'err' && r.data.code === code, `rejected: ${why}`);
   }
-  ok(lines('player.log').length === 4, `nothing extra reached the player (${lines('player.log').join(', ')})`);
+  ok(lines('player.log').length === 5, `nothing extra reached the player (${lines('player.log').join(', ')})`);
   cm.ws.close();
 }
 

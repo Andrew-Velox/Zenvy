@@ -179,6 +179,12 @@ impl MediaAdapter {
             can_next: p.get_property("CanGoNext").await.unwrap_or(false),
             can_prev: p.get_property("CanGoPrevious").await.unwrap_or(false),
             can_seek: p.get_property("CanSeek").await.unwrap_or(false),
+            volume: p
+                .get_property::<f64>("Volume")
+                .await
+                .ok()
+                .filter(|v| v.is_finite())
+                .map(|v| (v.clamp(0.0, 1.0) * 100.0).round() as u8),
         })
     }
 
@@ -213,6 +219,10 @@ impl MediaAdapter {
                     .call_method("Seek", &(offset_ms.saturating_mul(1000),))
                     .await
                     .map(drop),
+                MediaCommand::SetVolume { percent, .. } => p
+                    .set_property("Volume", f64::from(*percent) / 100.0)
+                    .await
+                    .map_err(zbus::Error::from),
             }
         };
         tokio::time::timeout(CALL_TIMEOUT, call)
@@ -363,6 +373,7 @@ mod tests {
             can_next: false,
             can_prev: false,
             can_seek: true,
+            volume: None,
         }
     }
 
@@ -447,6 +458,7 @@ mod tests {
             can_next: false,
             can_prev: false,
             can_seek: false,
+            volume: None,
         };
         let ps = vec![
             mk("a", PlaybackStatus::Stopped),
@@ -464,6 +476,7 @@ mod tests {
     struct Fake {
         status: String,
         position_us: i64,
+        volume: f64,
         calls: Arc<Mutex<Vec<String>>>,
     }
 
@@ -525,6 +538,14 @@ mod tests {
         fn can_seek(&self) -> bool {
             true
         }
+        #[zbus(property)]
+        fn volume(&self) -> f64 {
+            self.volume
+        }
+        #[zbus(property)]
+        fn set_volume(&mut self, v: f64) {
+            self.volume = v;
+        }
     }
 
     struct Bus(Child);
@@ -566,6 +587,7 @@ mod tests {
                 Fake {
                     status: "Paused".into(),
                     position_us: 5_000_000,
+                    volume: 0.5,
                     calls: calls.clone(),
                 },
             )
@@ -621,7 +643,20 @@ mod tests {
             Some("org.mpris.MediaPlayer2.zenvytest")
         );
 
+        assert_eq!(p.volume, Some(50), "the player's own volume is read");
         let id = "org.mpris.MediaPlayer2.zenvytest".to_string();
+        media
+            .execute(&MediaCommand::SetVolume {
+                player: id.clone(),
+                percent: 30,
+            })
+            .await
+            .unwrap();
+        assert_eq!(
+            media.state().await.unwrap().players[0].volume,
+            Some(30),
+            "setting it reaches the player"
+        );
         media
             .execute(&MediaCommand::PlayPause { player: id.clone() })
             .await

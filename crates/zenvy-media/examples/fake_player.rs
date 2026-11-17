@@ -19,6 +19,7 @@ impl Root {
 struct Player {
     playing: bool,
     position_us: i64,
+    volume: f64,
 }
 
 fn log(line: &str) {
@@ -90,6 +91,15 @@ impl Player {
     fn can_seek(&self) -> bool {
         true
     }
+    #[zbus(property)]
+    fn volume(&self) -> f64 {
+        self.volume
+    }
+    #[zbus(property)]
+    fn set_volume(&mut self, v: f64) {
+        self.volume = v;
+        log(&format!("Volume {}", (v * 100.0).round() as i64));
+    }
 }
 
 #[tokio::main]
@@ -102,6 +112,7 @@ async fn main() -> zbus::Result<()> {
             Player {
                 playing: false,
                 position_us: 30_000_000,
+                volume: 0.5,
             },
         )?
         .build()
