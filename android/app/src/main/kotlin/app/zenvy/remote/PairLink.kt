@@ -12,6 +12,9 @@ import java.net.URI
  */
 data class PairLink(val host: String, val port: Int, val fingerprint: String, val secret: String?) {
 
+    /** The host as a socket wants it (an IPv6 literal without its brackets). */
+    val connectHost: String get() = host.removeSurrounding("[", "]")
+
     /** `https://host:port` — the only origin the WebView is allowed to load. */
     val origin: String get() = "https://$host:$port"
 

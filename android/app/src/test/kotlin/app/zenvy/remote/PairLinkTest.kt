@@ -65,4 +65,11 @@ class PairLinkTest {
         assertFalse(l.isSameOrigin("javascript:void(0)"))
         assertFalse(l.isSameOrigin("not a url"))
     }
+
+    @Test fun `the host for a socket has no brackets around an IPv6 address`() {
+        val fp = "a".repeat(64)
+        assertEquals("fd00::1", PairLink.parse("https://[fd00::1]:7878/#fp=$fp")!!.connectHost)
+        assertEquals("192.168.1.20", PairLink.parse("https://192.168.1.20:7878/#fp=$fp")!!.connectHost)
+        assertEquals("my-pc.local", PairLink.parse("https://my-pc.local:7878/#fp=$fp")!!.connectHost)
+    }
 }

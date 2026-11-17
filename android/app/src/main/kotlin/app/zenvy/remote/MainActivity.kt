@@ -6,6 +6,7 @@ import android.content.ContentValues
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
+import android.content.res.ColorStateList
 import android.content.res.Configuration
 import android.graphics.Color
 import android.graphics.Typeface
@@ -15,11 +16,16 @@ import android.net.http.SslCertificate
 import android.net.http.SslError
 import android.os.Build
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
+import android.os.SystemClock
 import android.os.Environment
 import android.provider.MediaStore
 import java.io.File
 import java.io.IOException
 import java.io.InputStream
+import java.net.InetSocketAddress
+import java.net.Socket
 import android.text.InputType
 import android.view.Gravity
 import android.view.View
@@ -40,13 +46,41 @@ import com.google.mlkit.vision.codescanner.GmsBarcodeScanning
  *  - The device key lives in the WebView's app-private storage and is non-extractable.
  */
 class MainActivity : Activity() {
-    private companion object { const val REQ_FILES = 41 }
+    private companion object {
+        const val REQ_FILES = 41
+        const val PROBE_TIMEOUT_MS = 2500
+        const val LOAD_TIMEOUT_MS = 20_000L
+        const val RETRY_MS = 4_000L
+    }
+    private enum class Screen { SETUP, CONNECTING, ERROR, WEB }
+    private enum class Fail { UNREACHABLE, SLOW, CERT }
+    private val watchdog = Runnable { loadFailed = true; web.stopLoading(); fail(Fail.SLOW) }
+    private val autoRetry = Runnable { if (screen == Screen.ERROR && failKind != Fail.CERT && resumed) connect(silent = true) }
     private lateinit var store: PinStore
     private lateinit var web: WebView
     private lateinit var setupPanel: View
+    private lateinit var connectingPanel: View
+    private lateinit var connectingHost: TextView
     private lateinit var errorPanel: View
-    private lateinit var errorText: TextView
+    private lateinit var errIcon: ImageView
+    private lateinit var errTitle: TextView
+    private lateinit var errHost: TextView
+    private lateinit var errBody: TextView
+    private lateinit var errChecklist: View
+    private lateinit var errPort: TextView
+    private lateinit var retryBtn: Button
+    private lateinit var forgetBtn: Button
+    private lateinit var pasteGroup: View
     private lateinit var linkInput: EditText
+    private val ui = Handler(Looper.getMainLooper())
+    private var screen = Screen.SETUP
+    private var failKind = Fail.UNREACHABLE
+    /** Bumped on every attempt so an answer from an older attempt is ignored. */
+    private var attempt = 0
+    private var loadFailed = false
+    private var resumed = false
+    /** The link with the one-time pairing secret, kept until the first page has loaded so an automatic retry still pairs. */
+    private var pendingUrl: String? = null
     private var pin: PairLink? = null
     /** Text another app shared to Zenvy. It is only ever handed to the page as a string, and the person confirms what to do with it. */
     private var pendingShare: String = ""
@@ -63,21 +97,24 @@ class MainActivity : Activity() {
 
         web = buildWebView()
         setupPanel = buildSetupPanel()
+        connectingPanel = buildConnectingPanel()
         errorPanel = buildErrorPanel()
         val root = FrameLayout(this).apply {
             setBackgroundColor(c(R.color.surface))
             addView(web, match())
             addView(setupPanel, match())
+            addView(connectingPanel, match())
             addView(errorPanel, match())
         }
+        show(Screen.SETUP)
         setContentView(root)
 
         captureShare(intent)
         val fromIntent = intent?.dataString
         when {
             fromIntent != null && handleLink(fromIntent) -> {}
-            store.load() != null -> { pin = store.load(); open(pin!!.url()) }
-            else -> showSetup()
+            store.load() != null -> { pin = store.load(); connect() }
+            else -> show(Screen.SETUP)
         }
     }
 
@@ -99,18 +136,87 @@ class MainActivity : Activity() {
 
     // ------------------------------------------------------------------ navigation / state
 
-    private fun showSetup() {
-        web.visibility = View.GONE; errorPanel.visibility = View.GONE; setupPanel.visibility = View.VISIBLE
+    private fun show(next: Screen) {
+        screen = next
+        setupPanel.visibility = if (next == Screen.SETUP) View.VISIBLE else View.GONE
+        connectingPanel.visibility = if (next == Screen.CONNECTING) View.VISIBLE else View.GONE
+        errorPanel.visibility = if (next == Screen.ERROR) View.VISIBLE else View.GONE
+        // the page stays out of sight (but keeps loading) until it has really loaded: never a stale browser error page
+        web.visibility = if (next == Screen.WEB) View.VISIBLE else View.INVISIBLE
     }
 
-    private fun showError(msg: String) {
-        errorText.text = msg
-        web.visibility = View.GONE; setupPanel.visibility = View.GONE; errorPanel.visibility = View.VISIBLE
+    /**
+     * Opens the paired PC. A quick TCP probe tells within a couple of seconds whether anything answers; only then is the
+     * page loaded, behind a "Connecting" screen, and shown once it has finished. `silent` is the automatic retry on the
+     * "can't reach" screen: it changes nothing on screen until the PC answers.
+     */
+    private fun connect(silent: Boolean = false) {
+        val p = pin ?: run { show(Screen.SETUP); return }
+        val mine = ++attempt
+        val started = SystemClock.uptimeMillis()
+        ui.removeCallbacks(autoRetry); ui.removeCallbacks(watchdog)
+        loadFailed = false
+        if (!silent) {
+            if (screen == Screen.ERROR) setRetrying(true)
+            else { connectingHost.text = "${p.host}:${p.port}"; show(Screen.CONNECTING) }
+        }
+        Thread {
+            val up = reachable(p)
+            ui.post {
+                if (mine != attempt) return@post
+                when {
+                    !up && silent -> ui.postDelayed(autoRetry, RETRY_MS)
+                    // a refusal comes back in milliseconds; keep "Connecting…" up for a moment so the tap is seen to do something
+                    !up -> ui.postDelayed({ if (mine == attempt) fail(Fail.UNREACHABLE) }, (900 - (SystemClock.uptimeMillis() - started)).coerceAtLeast(0))
+                    else -> {
+                        connectingHost.text = "${p.host}:${p.port}"; show(Screen.CONNECTING)
+                        web.loadUrl(pendingUrl ?: p.url())
+                        ui.postDelayed(watchdog, LOAD_TIMEOUT_MS)
+                    }
+                }
+            }
+        }.start()
     }
 
-    private fun open(url: String) {
-        setupPanel.visibility = View.GONE; errorPanel.visibility = View.GONE; web.visibility = View.VISIBLE
-        web.loadUrl(url)
+    private fun reachable(p: PairLink): Boolean = try {
+        Socket().use { it.connect(InetSocketAddress(p.connectHost, p.port), PROBE_TIMEOUT_MS); true }
+    } catch (_: Exception) { false }
+
+    private fun fail(kind: Fail) {
+        ui.removeCallbacks(watchdog); ui.removeCallbacks(autoRetry)
+        failKind = kind; setRetrying(false)
+        val p = pin
+        val cert = kind == Fail.CERT
+        errIcon.setImageResource(if (cert) R.drawable.ic_shield_off else R.drawable.ic_wifi_off)
+        errIcon.imageTintList = ColorStateList.valueOf(c(if (cert) R.color.error else R.color.primary))
+        errTitle.text = when (kind) { Fail.UNREACHABLE -> "Can't reach your PC"; Fail.SLOW -> "Your PC isn't answering"; Fail.CERT -> "This isn't your PC" }
+        errHost.text = if (p == null) "" else "${p.host}:${p.port}"
+        errHost.visibility = if (p == null) View.GONE else View.VISIBLE
+        errBody.text = if (cert) "Its certificate does not match the one from the QR code. If you regenerated the certificate on the PC, forget it here and pair again."
+            else "Zenvy keeps trying and reconnects by itself as soon as the PC answers."
+        errChecklist.visibility = if (cert) View.GONE else View.VISIBLE
+        errPort.text = "Port ${p?.port ?: PairLink.DEFAULT_PORT} is open in the firewall"
+        restyle(retryBtn, !cert); restyle(forgetBtn, cert)
+        show(Screen.ERROR)
+        if (!cert && resumed) ui.postDelayed(autoRetry, RETRY_MS)
+    }
+
+    private fun setRetrying(on: Boolean) {
+        retryBtn.isEnabled = !on
+        retryBtn.text = if (on) "Connecting…" else "Try again"
+        retryBtn.alpha = if (on) 0.6f else 1f
+    }
+
+    override fun onResume() {
+        super.onResume()
+        resumed = true
+        if (screen == Screen.ERROR && failKind != Fail.CERT) { ui.removeCallbacks(autoRetry); ui.postDelayed(autoRetry, 1_000) }
+    }
+
+    override fun onPause() {
+        resumed = false
+        ui.removeCallbacks(autoRetry)
+        super.onPause()
     }
 
     /** Pins the PC described by a scanned/pasted/opened link and starts pairing. */
@@ -122,19 +228,21 @@ class MainActivity : Activity() {
         }
         store.save(link.withoutSecret())
         pin = link.withoutSecret()
+        pendingUrl = link.url()
         // A fresh pairing replaces any earlier identity for this app.
         WebStorage.getInstance().deleteAllData()
-        open(link.url())
+        connect()
         return true
     }
 
     /** Forget the PC: drop the pin and the device key (WebView storage), return to setup. */
     fun forgetPc() {
-        store.clear(); pin = null
+        store.clear(); pin = null; pendingUrl = null
+        attempt++; ui.removeCallbacks(autoRetry); ui.removeCallbacks(watchdog)
         WebStorage.getInstance().deleteAllData()
         CookieManager.getInstance().removeAllCookies(null)
         web.clearCache(true); web.loadUrl("about:blank")
-        showSetup()
+        show(Screen.SETUP)
     }
 
     @Deprecated("Deprecated in Java")
@@ -225,13 +333,23 @@ class MainActivity : Activity() {
                     handler.proceed() // exactly the certificate from the QR code
                 } else {
                     handler.cancel()
-                    showError("This is not the PC you paired with. Its certificate does not match the one from the QR code.\n\nIf you regenerated the PC's certificate, forget this PC and pair again.")
+                    loadFailed = true
+                    fail(Fail.CERT)
                 }
             }
 
             override fun onReceivedError(view: WebView, request: WebResourceRequest, error: WebResourceError) {
-                if (request.isForMainFrame && errorPanel.visibility != View.VISIBLE) {
-                    showError("Can't reach ${pin?.host ?: "the PC"}. Check that zenvyd is running and that you are on the same network.")
+                if (!request.isForMainFrame || loadFailed) return
+                loadFailed = true
+                fail(Fail.UNREACHABLE)
+            }
+
+            override fun onPageFinished(view: WebView, url: String?) {
+                // the paired PC's page loaded: now (and only now) it is shown
+                if (!loadFailed && screen == Screen.CONNECTING && pin?.isSameOrigin(url.orEmpty()) == true) {
+                    ui.removeCallbacks(watchdog)
+                    pendingUrl = null
+                    show(Screen.WEB)
                 }
             }
         }
@@ -322,42 +440,131 @@ class MainActivity : Activity() {
 
     private fun column(): LinearLayout = LinearLayout(this).apply {
         orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER_VERTICAL
-        setPadding(dp(24), dp(24), dp(24), dp(96)); setBackgroundColor(c(R.color.surface))
+        setPadding(dp(28), dp(32), dp(28), dp(56)); setBackgroundColor(c(R.color.surface))
         layoutParams = match()
     }
 
     private fun gap(h: Int) = View(this).apply { layoutParams = LinearLayout.LayoutParams(1, dp(h)) }
 
-    private fun buildSetupPanel(): View = column().apply {
-        addView(text("Pair with your PC", 28f))
-        addView(gap(8))
-        addView(text("Run zenvyd pair on the PC, then scan the QR code it shows.", 16f, c(R.color.on_surface_variant)))
-        addView(gap(32))
-        addView(button("Scan QR code", true) { scan() })
-        addView(gap(24))
-        addView(text("Or paste the pairing link", 14f, c(R.color.primary), bold = true))
-        addView(gap(8))
-        linkInput = EditText(this@MainActivity).apply {
-            hint = "https://…"; setHintTextColor(c(R.color.on_surface_variant)); setTextColor(c(R.color.on_surface)); textSize = 16f
-            background = shape(Color.TRANSPARENT, 16, c(R.color.outline)); setPadding(dp(16), dp(16), dp(16), dp(16))
-            inputType = InputType.TYPE_TEXT_VARIATION_URI or InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS; maxLines = 3
-        }
-        addView(linkInput)
-        addView(gap(12))
-        addView(button("Connect", false) { handleLink(linkInput.text.toString()) })
+    /** Scrolls on small screens or in landscape; otherwise the content is centred. */
+    private fun scroll(content: View): ScrollView = ScrollView(this).apply {
+        isFillViewport = true; isVerticalScrollBarEnabled = false; setBackgroundColor(c(R.color.surface))
+        addView(content, ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
     }
 
-    private fun buildErrorPanel(): View = column().apply {
-        visibility = View.GONE
-        addView(text("Not connected", 28f))
-        addView(gap(8))
-        errorText = text("", 16f, c(R.color.on_surface_variant))
-        addView(errorText)
-        addView(gap(32))
-        addView(button("Try again", true) { pin?.let { open(it.url()) } ?: showSetup() })
-        addView(gap(12))
-        addView(button("Forget this PC", false) { forgetPc() })
+    private fun centered(t: TextView) = t.apply { gravity = Gravity.CENTER }
+
+    /** A small monospace pill for an address or a command. */
+    private fun chip(s: String) = TextView(this).apply {
+        text = s; textSize = 14f; typeface = Typeface.MONOSPACE; setTextColor(c(R.color.on_surface))
+        background = shape(c(R.color.surface_container_high), 12); setPadding(dp(12), dp(6), dp(12), dp(6))
+        layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT)
     }
+
+    private fun restyle(b: Button, filled: Boolean) {
+        b.setTextColor(c(if (filled) R.color.on_primary else R.color.on_secondary_container))
+        b.background = shape(c(if (filled) R.color.primary else R.color.secondary_container), 28)
+    }
+
+    private fun dot() = View(this).apply {
+        background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(c(R.color.primary)) }
+        layoutParams = LinearLayout.LayoutParams(dp(7), dp(7)).apply { marginEnd = dp(12) }
+    }
+
+    private fun row(vararg views: View) = LinearLayout(this).apply {
+        orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL
+        views.forEach { addView(it) }
+    }
+
+    private fun stepRow(n: String, body: View) = row(
+        TextView(this).apply {
+            text = n; textSize = 14f; gravity = Gravity.CENTER; setTextColor(c(R.color.primary))
+            typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+            background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(c(R.color.secondary_container)) }
+            layoutParams = LinearLayout.LayoutParams(dp(32), dp(32)).apply { marginEnd = dp(16) }
+        }, body)
+
+    private fun buildSetupPanel(): View = scroll(column().apply {
+        gravity = Gravity.CENTER_VERTICAL
+        addView(ImageView(this@MainActivity).apply {
+            setImageResource(R.drawable.ic_launcher_monochrome); imageTintList = ColorStateList.valueOf(c(R.color.on_surface))
+            layoutParams = LinearLayout.LayoutParams(dp(112), dp(112)).apply { marginStart = -dp(30); topMargin = -dp(20); bottomMargin = -dp(12) }
+        })
+        addView(text("Pair with your PC", 30f, bold = true))
+        addView(gap(8))
+        addView(text("It takes about ten seconds.", 16f, c(R.color.on_surface_variant)))
+        addView(gap(28))
+        addView(stepRow("1", LinearLayout(this@MainActivity).apply {
+            orientation = LinearLayout.VERTICAL
+            addView(text("On your PC, run", 16f))
+            addView(gap(6)); addView(chip("zenvyd pair"))
+        }))
+        addView(gap(20))
+        addView(stepRow("2", text("Scan the QR code it shows", 16f)))
+        addView(gap(32))
+        addView(button("Scan QR code", true) { scan() })
+        addView(gap(12))
+        pasteGroup = LinearLayout(this@MainActivity).apply {
+            orientation = LinearLayout.VERTICAL; visibility = View.GONE
+            addView(gap(4))
+            linkInput = EditText(this@MainActivity).apply {
+                hint = "https://…"; setHintTextColor(c(R.color.on_surface_variant)); setTextColor(c(R.color.on_surface)); textSize = 16f
+                background = shape(Color.TRANSPARENT, 16, c(R.color.outline)); setPadding(dp(16), dp(16), dp(16), dp(16))
+                inputType = InputType.TYPE_TEXT_VARIATION_URI or InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS; maxLines = 3
+            }
+            addView(linkInput); addView(gap(12))
+            addView(button("Connect", true) { handleLink(linkInput.text.toString()) })
+        }
+        lateinit var pasteToggle: Button
+        pasteToggle = button("Paste the link instead", false) {
+            pasteGroup.visibility = View.VISIBLE; pasteToggle.visibility = View.GONE; linkInput.requestFocus()
+        }
+        addView(pasteToggle)
+        addView(pasteGroup)
+    })
+
+    private fun buildConnectingPanel(): View = scroll(column().apply {
+        gravity = Gravity.CENTER
+        addView(ProgressBar(this@MainActivity).apply {
+            isIndeterminate = true; indeterminateTintList = ColorStateList.valueOf(c(R.color.primary))
+            layoutParams = LinearLayout.LayoutParams(dp(44), dp(44))
+        })
+        addView(gap(24))
+        addView(centered(text("Connecting", 22f, bold = true)))
+        addView(gap(12))
+        connectingHost = chip("")
+        addView(connectingHost)
+    })
+
+    private fun buildErrorPanel(): View = scroll(column().apply {
+        gravity = Gravity.CENTER
+        errIcon = ImageView(this@MainActivity).apply { layoutParams = FrameLayout.LayoutParams(dp(36), dp(36), Gravity.CENTER) }
+        addView(FrameLayout(this@MainActivity).apply {
+            background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(c(R.color.surface_container_high)) }
+            addView(errIcon)
+            layoutParams = LinearLayout.LayoutParams(dp(88), dp(88))
+        })
+        addView(gap(24))
+        errTitle = centered(text("", 24f, bold = true)); addView(errTitle)
+        addView(gap(12))
+        errHost = chip(""); addView(errHost)
+        addView(gap(16))
+        errBody = centered(text("", 15f, c(R.color.on_surface_variant))); addView(errBody)
+        addView(gap(24))
+        errPort = text("", 14f, c(R.color.on_surface_variant))
+        errChecklist = LinearLayout(this@MainActivity).apply {
+            orientation = LinearLayout.VERTICAL
+            background = shape(c(R.color.surface_container), 20); setPadding(dp(20), dp(18), dp(20), dp(18))
+            for (line in listOf<View>(text("zenvyd is running on the PC", 14f, c(R.color.on_surface_variant)), text("The phone is on the same Wi-Fi", 14f, c(R.color.on_surface_variant)), errPort)) {
+                addView(row(dot(), line)); if (line !== errPort) addView(gap(10))
+            }
+        }
+        addView(errChecklist)
+        addView(gap(28))
+        retryBtn = button("Try again", true) { connect() }; addView(retryBtn)
+        addView(gap(12))
+        forgetBtn = button("Forget this PC", false) { forgetPc() }; addView(forgetBtn)
+    })
 
     private fun scan() {
         val opts = GmsBarcodeScannerOptions.Builder().setBarcodeFormats(Barcode.FORMAT_QR_CODE).enableAutoZoom().build()
