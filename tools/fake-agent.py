@@ -39,7 +39,8 @@ def handle(c):
         delay = float(os.environ.get("FAKE_APPROVAL_AFTER", "0"))
         if delay:
             time.sleep(delay)
-            out({"type": "approval", "name": "Pixel 8", "code": "4815"})
+            twin = [{"id": "d0", "last_seen": now - 300, "online": False}] if os.environ.get("FAKE_TWIN") else []
+            out({"type": "approval", "name": "Pixel 8", "code": "4815", "same_name": twin})
             ans = json.loads(f.readline() or "{}")
             out({"type": "done", "result": "approved" if ans.get("approve") else "denied"})
         else:

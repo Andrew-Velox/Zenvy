@@ -1112,8 +1112,47 @@ async fn pair_cmd() -> Result<(), Box<dyn std::error::Error>> {
                 })
                 .await?;
                 let yes = matches!(ans.trim().to_ascii_lowercase().as_str(), "y" | "yes");
-                w.write_all(format!("{{\"approve\":{yes}}}\n").as_bytes())
+                // an earlier record of a phone with the same name: offer to replace it (its permissions carry over)
+                let mut replace = serde_json::Value::Null;
+                if let (true, Some([twin])) = (yes, m["same_name"].as_array().map(|a| a.as_slice()))
+                {
+                    let seen = if twin["online"] == true {
+                        "connected now".to_string()
+                    } else {
+                        twin["last_seen"]
+                            .as_u64()
+                            .map(|t| {
+                                let now = std::time::SystemTime::now()
+                                    .duration_since(std::time::UNIX_EPOCH)
+                                    .map(|d| d.as_secs())
+                                    .unwrap_or(0);
+                                format!("last seen {} s ago", now.saturating_sub(t))
+                            })
+                            .unwrap_or_else(|| "never seen".into())
+                    };
+                    print!(
+                        "A phone named '{}' is already paired ({seen}). Replace it and keep its permissions? [y/N] ",
+                        m["name"].as_str().unwrap_or("?")
+                    );
+                    std::io::stdout().flush()?;
+                    let a2 = tokio::task::spawn_blocking(|| {
+                        let mut a = String::new();
+                        let _ = std::io::stdin().read_line(&mut a);
+                        a
+                    })
                     .await?;
+                    if matches!(a2.trim().to_ascii_lowercase().as_str(), "y" | "yes") {
+                        replace = twin["id"].clone();
+                    }
+                }
+                w.write_all(
+                    format!(
+                        "{}\n",
+                        serde_json::json!({ "approve": yes, "replace": replace })
+                    )
+                    .as_bytes(),
+                )
+                .await?;
             }
             Some("done") => {
                 println!("pairing {}", m["result"].as_str().unwrap_or("?"));

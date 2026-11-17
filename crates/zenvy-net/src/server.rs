@@ -1,4 +1,4 @@
-use crate::app::{App, ApprovalRequest};
+use crate::app::{App, ApprovalRequest, Decision, Hub, SameName};
 use crate::tls::TlsMaterial;
 use crate::ws::ws_handler;
 use axum::body::Body;
@@ -138,10 +138,24 @@ async fn pair(
         .filter(|c| !c.is_control())
         .take(40)
         .collect();
+    let same_name: Vec<SameName> = app
+        .store
+        .lock()
+        .unwrap()
+        .list()
+        .iter()
+        .filter(|d| d.name == name)
+        .map(|d| SameName {
+            id: d.id.clone(),
+            last_seen: d.last_seen,
+            online: app.online.is_online(&d.id),
+        })
+        .collect();
     if tx
         .send(ApprovalRequest {
             name: name.clone(),
             code,
+            same_name: same_name.clone(),
             reply,
         })
         .await
@@ -149,10 +163,11 @@ async fn pair(
     {
         return fail("operator gone");
     }
-    let approved = matches!(
-        tokio::time::timeout(Duration::from_secs(60), wait).await,
-        Ok(Ok(true))
-    );
+    let decision = match tokio::time::timeout(Duration::from_secs(60), wait).await {
+        Ok(Ok(d)) => d,
+        _ => Decision::default(),
+    };
+    let approved = decision.approve;
     if !approved {
         app.audit
             .record("pair_denied", None, &format!("{ip}: name={name}"));
@@ -175,7 +190,39 @@ async fn pair(
                 Some(&d.id),
                 &format!("{ip}: name={}", d.name),
             );
-            Json(json!({ "device_id": d.id, "name": d.name, "scopes": d.scopes })).into_response()
+            // The operator chose to replace an earlier record of this phone: it is removed and its permissions carry over.
+            let mut scopes = d.scopes.clone();
+            if let Some(old) = decision
+                .replace
+                .as_deref()
+                .filter(|o| same_name.iter().any(|s| s.id == *o))
+            {
+                let old_scopes: Vec<String> = app
+                    .store
+                    .lock()
+                    .unwrap()
+                    .get(old)
+                    .map(|x| x.scopes.clone())
+                    .unwrap_or_default();
+                let removed = app.store.lock().unwrap().revoke(old).ok().flatten();
+                if removed.is_some() {
+                    for sc in old_scopes
+                        .iter()
+                        .filter(|s| !DEFAULT_SCOPES.contains(&s.as_str()))
+                    {
+                        if let Ok(Some(nd)) = app.store.lock().unwrap().set_scope(&d.id, sc, true) {
+                            scopes = nd.scopes;
+                        }
+                    }
+                    app.audit.record(
+                        "pair_replaced",
+                        Some(&d.id),
+                        &format!("replaced an earlier record of {}", d.name),
+                    );
+                    let _ = app.hub.send(Hub::Revoked(old.to_string()));
+                }
+            }
+            Json(json!({ "device_id": d.id, "name": d.name, "scopes": scopes })).into_response()
         }
         Err(e) => {
             app.audit.record("pair_error", None, &e.to_string());

@@ -24,10 +24,27 @@ pub enum Hub {
     Scopes(String),
 }
 
+/// An already paired phone with the same name as the one asking to pair (usually an old record of the same phone).
+#[derive(Clone, Debug)]
+pub struct SameName {
+    pub id: String,
+    pub last_seen: Option<u64>,
+    pub online: bool,
+}
+
+/// The operator's answer: approve or not, and optionally which earlier record of the same phone to replace (its
+/// permissions carry over). A `replace` that is not one of the offered same-name phones is ignored.
+#[derive(Clone, Debug, Default)]
+pub struct Decision {
+    pub approve: bool,
+    pub replace: Option<String>,
+}
+
 pub struct ApprovalRequest {
     pub name: String,
     pub code: String,
-    pub reply: oneshot::Sender<bool>,
+    pub same_name: Vec<SameName>,
+    pub reply: oneshot::Sender<Decision>,
 }
 
 #[derive(Clone)]

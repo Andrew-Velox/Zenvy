@@ -7,7 +7,7 @@ mod admin;
 mod icons;
 mod theme;
 
-use admin::{Device, PairEvent, Pairing, Status};
+use admin::{Device, PairEvent, Pairing, Status, Twin};
 use eframe::egui::{
     self, Align, Color32, CornerRadius, Layout, Margin, Rect, RichText, Sense, Theme, Vec2,
 };
@@ -88,7 +88,9 @@ struct PairState {
     pairing: Pairing,
     link: Option<(String, u64)>,
     qr: Option<(usize, Vec<bool>)>,
-    approval: Option<(String, String)>,
+    approval: Option<(String, String, Vec<Twin>)>,
+    /// Replace the earlier record of the same phone (only offered when exactly one exists).
+    replace: bool,
     result: Option<String>,
     error: Option<String>,
     started: Instant,
@@ -246,6 +248,43 @@ fn address_chip(ui: &mut egui::Ui, text: &str, p: &Palette) {
         });
 }
 
+/// A checkbox row in the same style as the chips. Returns true when it was clicked.
+fn toggle_row(ui: &mut egui::Ui, on: bool, label: &str, p: &Palette) -> bool {
+    let galley = ui.painter().layout(
+        label.to_string(),
+        egui::FontId::proportional(14.5),
+        p.on_surface,
+        ui.available_width() - 44.0,
+    );
+    let size = Vec2::new(ui.available_width(), galley.size().y.max(24.0) + 16.0);
+    let (rect, resp) = ui.allocate_exact_size(size, Sense::click());
+    let fill = if resp.hovered() {
+        p.container_high
+    } else {
+        p.container
+    };
+    ui.painter().rect_filled(rect, CornerRadius::same(16), fill);
+    let boxr = Rect::from_min_size(
+        egui::pos2(rect.min.x + 12.0, rect.center().y - 11.0),
+        Vec2::splat(22.0),
+    );
+    ui.painter().rect_filled(
+        boxr,
+        CornerRadius::same(7),
+        if on { PRIMARY } else { p.secondary },
+    );
+    if on {
+        icons::paint(ui.painter(), boxr.shrink(3.0), Icon::Check, ON_PRIMARY);
+    }
+    ui.painter().galley(
+        egui::pos2(rect.min.x + 44.0, rect.center().y - galley.size().y / 2.0),
+        galley,
+        p.on_surface,
+    );
+    resp.on_hover_cursor(egui::CursorIcon::PointingHand)
+        .clicked()
+}
+
 fn status_dot(ui: &mut egui::Ui, color: Color32) {
     let (rect, _) = ui.allocate_exact_size(Vec2::splat(10.0), Sense::hover());
     ui.painter().circle_filled(rect.center(), 4.0, color);
@@ -398,7 +437,15 @@ impl ZenvyApp {
                         p.qr = qr_modules(&url);
                         p.link = Some((url, ttl));
                     }
-                    PairEvent::Approval { name, code } => p.approval = Some((name, code)),
+                    PairEvent::Approval {
+                        name,
+                        code,
+                        same_name,
+                    } => {
+                        // the usual cause of a twin is the same phone paired again: replace it unless it is connected right now
+                        p.replace = matches!(same_name.as_slice(), [t] if !t.online);
+                        p.approval = Some((name, code, same_name));
+                    }
                     PairEvent::Done(r) => p.result = Some(r),
                     PairEvent::Error(e) => p.error = Some(e),
                 }
@@ -415,6 +462,7 @@ impl ZenvyApp {
                     link: None,
                     qr: None,
                     approval: None,
+                    replace: false,
                     result: None,
                     error: None,
                     started: Instant::now(),
@@ -697,6 +745,7 @@ impl ZenvyApp {
         let mut back = false;
         let mut approve: Option<bool> = None;
         let mut copy: Option<String> = None;
+        let mut flip = false;
         if let View::Pair(st) = &self.view {
             ui.label(RichText::new("Pair a phone").family(bold()).size(22.0));
             let finished = st.result.is_some() || st.error.is_some();
@@ -748,7 +797,7 @@ impl ZenvyApp {
                                 ui.add_space(14.0);
                             });
                         });
-                    } else if let Some((name, code)) = &st.approval {
+                    } else if let Some((name, code, twins)) = &st.approval {
                         card(ui, p.container, |ui| {
                             ui.vertical_centered(|ui| {
                                 ui.add_space(8.0);
@@ -794,6 +843,24 @@ impl ZenvyApp {
                             });
                         });
                         ui.add_space(4.0);
+                        if let [twin] = twins.as_slice() {
+                            let seen = if twin.online {
+                                "connected now".to_string()
+                            } else {
+                                twin.last_seen
+                                    .map(|t| {
+                                        format!("last seen {}", ago(now_secs().saturating_sub(t)))
+                                    })
+                                    .unwrap_or_else(|| "never seen".into())
+                            };
+                            let label = format!(
+                                "Replace the earlier {name} ({seen}) and keep its permissions"
+                            );
+                            if toggle_row(ui, st.replace, &label, p) {
+                                flip = true;
+                            }
+                            ui.add_space(2.0);
+                        }
                         if pill(ui, "Approve", Look::Primary, true).clicked() {
                             approve = Some(true);
                         }
@@ -904,9 +971,18 @@ impl ZenvyApp {
                 }
             }
         }
+        if flip {
+            if let View::Pair(st) = &mut self.view {
+                st.replace = !st.replace;
+            }
+        }
         if let Some(a) = approve {
             if let View::Pair(st) = &mut self.view {
-                st.pairing.answer(a);
+                let twin = match st.approval.as_ref().map(|(_, _, t)| t.as_slice()) {
+                    Some([t]) if st.replace && a => Some(t.id.clone()),
+                    _ => None,
+                };
+                st.pairing.answer(a, twin);
                 st.approval = None;
             }
         }

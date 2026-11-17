@@ -2,7 +2,7 @@
 //! start pairing, approve a phone, list or revoke devices. Never reachable from the network.
 //! Protocol: one JSON object per line in each direction.
 
-use crate::app::{App, ApprovalRequest, Hub};
+use crate::app::{App, ApprovalRequest, Decision, Hub};
 use serde_json::{json, Value};
 use std::os::unix::fs::{DirBuilderExt, PermissionsExt};
 use std::path::Path;
@@ -180,9 +180,11 @@ async fn pair(
     let outcome = tokio::select! {
         req = rx.recv() => match req {
             Some(req) => {
-                put(w, json!({ "type": "approval", "name": req.name, "code": req.code })).await?;
-                let answer = lines.next_line().await?.and_then(|l| serde_json::from_str::<Value>(&l).ok()).and_then(|v| v["approve"].as_bool()).unwrap_or(false);
-                let _ = req.reply.send(answer);
+                let same: Vec<Value> = req.same_name.iter().map(|s| json!({ "id": s.id, "last_seen": s.last_seen, "online": s.online })).collect();
+                put(w, json!({ "type": "approval", "name": req.name, "code": req.code, "same_name": same })).await?;
+                let v = lines.next_line().await?.and_then(|l| serde_json::from_str::<Value>(&l).ok()).unwrap_or(Value::Null);
+                let answer = v["approve"].as_bool().unwrap_or(false);
+                let _ = req.reply.send(Decision { approve: answer, replace: v["replace"].as_str().map(str::to_string) });
                 if answer { "approved" } else { "denied" }
             }
             None => "cancelled",

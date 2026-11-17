@@ -61,11 +61,11 @@ async function wsConnect(phone, deviceId, { badSig = false } = {}) {
   return { ws, msgs, bins, until, closedCode: () => closed, send: o => ws.send(JSON.stringify({ v: 1, ...o })) };
 }
 
-async function startPairing(phone, { approve = true, name = 'Test Phone', secretOverride } = {}) {
+async function startPairing(phone, { approve = true, name = 'Test Phone', secretOverride, replace } = {}) {
   let seen = {}; let secret; const holder = {};
   const adminDone = admin({ op: 'pair' }, l => {
     if (l.type === 'pairing') { secret = new URL(l.url).hash.match(/s=([^&]+)/)[1]; seen.url = l.url; }
-    if (l.type === 'approval') { seen.approval = l; return { approve }; }
+    if (l.type === 'approval') { seen.approval = l; return replace ? { approve, replace: typeof replace === 'function' ? replace(l) : replace } : { approve }; }
   }, holder);
   while (!secret) await sleep(20);
   const r = await req('/api/pair', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ secret: secretOverride ?? secret, name, pubkey: b64u(phone.raw) }) });
@@ -1016,6 +1016,21 @@ const rv = (await admin({ op: 'revoke', id: dev })).find(l => l.type === 'revoke
 ok(rv.ok, 'revoke by id');
 await c.until(m => false, 2500); ok(c.closedCode() === 4403, `live socket closed immediately on revoke (code ${c.closedCode()})`);
 let again = await wsConnect(phone, dev); await again.until(m => false, 3000); ok(again.closedCode() === 4401, 'revoked device cannot reconnect');
+
+console.log('== pairing a phone again can replace its old record');
+{ const devs = async () => (await admin({ op: 'devices' })).find(l => l.type === 'devices').devices;
+  const a = await newPhone(); const pa = await startPairing(a, { name: 'Twin Phone' }); const ida = pa.json.device_id;
+  await admin({ op: 'grant', id: ida, scope: 'screen' });
+  const b = await newPhone(); const pb = await startPairing(b, { name: 'Twin Phone', replace: l => l.same_name?.[0]?.id });
+  ok(pb.seen.approval?.same_name?.length === 1 && pb.seen.approval.same_name[0].id === ida, 'the approval lists the earlier phone with the same name');
+  const idb = pb.json.device_id; let l1 = await devs();
+  ok(!l1.some(d => d.id === ida) && l1.some(d => d.id === idb), 'choosing to replace removes the old record');
+  ok(pb.json.scopes.includes('screen') && l1.find(d => d.id === idb).scopes.includes('screen'), 'and the new pairing keeps the old permissions');
+  const c = await newPhone(); const pc = await startPairing(c, { name: 'Twin Phone' });
+  l1 = await devs(); ok(l1.some(d => d.id === idb) && l1.some(d => d.id === pc.json.device_id), 'without choosing to replace, both stay');
+  const d2 = await newPhone(); const pd = await startPairing(d2, { name: 'Another Name', replace: idb });
+  l1 = await devs(); ok(pd.json.device_id && l1.some(d => d.id === idb), 'a replace request for a phone with a different name is ignored');
+  for (const id of [idb, pc.json.device_id, pd.json.device_id]) await admin({ op: 'revoke', id }); }
 
 console.log('== a phone that forgets the PC removes itself');
 { const ph = await newPhone(); const pr = await startPairing(ph, { approve: true, name: 'Forgetful Phone' });

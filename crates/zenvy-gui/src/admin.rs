@@ -124,6 +124,14 @@ pub fn revoke(id: &str) -> Result<(), String> {
     expect_ok(request(json!({ "op": "revoke", "id": id }))?)
 }
 
+/// An already paired phone with the same name as the one asking to pair.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Twin {
+    pub id: String,
+    pub last_seen: Option<u64>,
+    pub online: bool,
+}
+
 /// What happens during pairing, in order.
 #[derive(Debug, Clone, PartialEq)]
 pub enum PairEvent {
@@ -132,10 +140,12 @@ pub enum PairEvent {
         url: String,
         ttl: u64,
     },
-    /// A phone scanned it and asks to be approved; `code` must match the one on the phone.
+    /// A phone scanned it and asks to be approved; `code` must match the one on the phone. `same_name` lists phones
+    /// already paired under the same name (usually an old record of this phone).
     Approval {
         name: String,
         code: String,
+        same_name: Vec<Twin>,
     },
     /// approved | denied | cancelled | expired
     Done(String),
@@ -145,7 +155,7 @@ pub enum PairEvent {
 /// A running pairing session. Dropping it (or `cancel`) closes the socket, which cancels pairing on the agent.
 pub struct Pairing {
     pub events: Receiver<PairEvent>,
-    answer: Sender<bool>,
+    answer: Sender<Value>,
     stream: UnixStream,
 }
 
@@ -155,7 +165,7 @@ impl Pairing {
         s.set_read_timeout(None).ok();
         writeln!(s, "{}", json!({ "op": "pair" })).map_err(|e| e.to_string())?;
         let (tx, events) = channel();
-        let (answer, answers) = channel::<bool>();
+        let (answer, answers) = channel::<Value>();
         let reader = s.try_clone().map_err(|e| e.to_string())?;
         let mut writer = s.try_clone().map_err(|e| e.to_string())?;
         let wake = std::sync::Arc::new(wake);
@@ -174,6 +184,20 @@ impl Pairing {
                     Some("approval") => PairEvent::Approval {
                         name: v["name"].as_str().unwrap_or("A phone").to_string(),
                         code: v["code"].as_str().unwrap_or("").to_string(),
+                        same_name: v["same_name"]
+                            .as_array()
+                            .map(|a| {
+                                a.iter()
+                                    .filter_map(|t| {
+                                        Some(Twin {
+                                            id: t["id"].as_str()?.to_string(),
+                                            last_seen: t["last_seen"].as_u64(),
+                                            online: t["online"].as_bool().unwrap_or(false),
+                                        })
+                                    })
+                                    .collect()
+                            })
+                            .unwrap_or_default(),
                     },
                     Some("done") => {
                         PairEvent::Done(v["result"].as_str().unwrap_or("cancelled").to_string())
@@ -200,7 +224,7 @@ impl Pairing {
         });
         std::thread::spawn(move || {
             while let Ok(a) = answers.recv() {
-                if writeln!(writer, "{}", json!({ "approve": a })).is_err() {
+                if writeln!(writer, "{a}").is_err() {
                     break;
                 }
             }
@@ -212,8 +236,11 @@ impl Pairing {
         })
     }
 
-    pub fn answer(&self, approve: bool) {
-        let _ = self.answer.send(approve);
+    /// Approve or deny; `replace` is the id of an earlier record of the same phone to remove (its permissions carry over).
+    pub fn answer(&self, approve: bool, replace: Option<String>) {
+        let _ = self
+            .answer
+            .send(json!({ "approve": approve, "replace": replace }));
     }
 }
 
@@ -272,12 +299,17 @@ mod tests {
             writeln!(
                 s,
                 "{}",
-                json!({ "type": "approval", "name": "Pixel", "code": "4815" })
+                json!({ "type": "approval", "name": "Pixel", "code": "4815", "same_name": [{ "id": "old1", "last_seen": 100, "online": false }] })
             )
             .unwrap();
             line.clear();
             r.read_line(&mut line).unwrap();
-            let approved = serde_json::from_str::<Value>(&line).unwrap()["approve"] == true;
+            let answer = serde_json::from_str::<Value>(&line).unwrap();
+            assert_eq!(
+                answer["replace"], "old1",
+                "the window can ask to replace the earlier record: {line}"
+            );
+            let approved = answer["approve"] == true;
             writeln!(
                 s,
                 "{}",
@@ -298,10 +330,15 @@ mod tests {
             next(&p),
             PairEvent::Approval {
                 name: "Pixel".into(),
-                code: "4815".into()
+                code: "4815".into(),
+                same_name: vec![Twin {
+                    id: "old1".into(),
+                    last_seen: Some(100),
+                    online: false
+                }]
             }
         );
-        p.answer(true);
+        p.answer(true, Some("old1".into()));
         assert_eq!(next(&p), PairEvent::Done("approved".into()));
         agent.join().unwrap();
         drop(p);
