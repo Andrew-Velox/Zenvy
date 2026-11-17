@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.2.0
 
 - Media: the player (VLC, Spotify and so on) now has its own volume slider, separate from the PC volume slider, which is now labelled "PC volume".
 - **Zenvy window**: a small desktop app (`zenvy`) to pair a phone with a QR code and approve it, see which phones are connected, and switch each phone's permissions (sensitive ones ask first). It only talks to the agent's local admin socket. `zenvy --pair` opens straight to the QR code.

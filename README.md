@@ -32,7 +32,7 @@ Zenvy has two parts: the **agent** (`zenvyd`) on the PC and the **Android app**.
 **From a release:**
 
 ```bash
-tar xzf zenvy-0.1.0-x86_64-linux.tar.gz && cd zenvy-0.1.0-x86_64-linux
+tar xzf zenvy-0.2.0-x86_64-linux.tar.gz && cd zenvy-0.2.0-x86_64-linux
 packaging/install.sh --enable       # installs ~/.local/bin/zenvyd and a systemd user service, starts it
 ```
 
@@ -188,7 +188,7 @@ Files you received (`~/Downloads/Zenvy`), the Android app and the browser extens
 
 ## Status
 
-Feature-complete for daily use on Hyprland and heading for its first public release (0.1.0). It is tested on one machine (Arch Linux, Hyprland), so other distributions and compositors are untested for now. `spikes/` holds throwaway early experiments and is not part of the product.
+Feature-complete for daily use on Hyprland and at version 0.2.0, the first public release. It is tested on one machine (Arch Linux, Hyprland), so other distributions and compositors are untested for now. `spikes/` holds throwaway early experiments and is not part of the product.
 
 ## License
 

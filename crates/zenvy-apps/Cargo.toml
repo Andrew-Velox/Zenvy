@@ -1,6 +1,6 @@
 [package]
 name = "zenvy-apps"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 license.workspace = true
 description = "Installed applications (desktop entries) and launching them without a shell, for the phone's app launcher"

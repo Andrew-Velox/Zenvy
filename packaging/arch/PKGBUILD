@@ -1,6 +1,6 @@
 # Maintainer: Zenvy contributors
 pkgname=zenvy
-pkgver=0.1.0
+pkgver=0.2.0
 pkgrel=1
 pkgdesc='Control a Hyprland PC from your phone: touchpad, keyboard, windows, media, screen, files'
 arch=('x86_64' 'aarch64')

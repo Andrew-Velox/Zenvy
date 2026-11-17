@@ -4378,14 +4378,14 @@ dependencies = [
 
 [[package]]
 name = "zenvy-apps"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "tempfile",
 ]
 
 [[package]]
 name = "zenvy-audio"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -4398,7 +4398,7 @@ dependencies = [
 
 [[package]]
 name = "zenvy-auth"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "base64",
  "ed25519-dalek",
@@ -4412,7 +4412,7 @@ dependencies = [
 
 [[package]]
 name = "zenvy-brightness"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "serde_json",
  "tempfile",
@@ -4424,7 +4424,7 @@ dependencies = [
 
 [[package]]
 name = "zenvy-config"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "serde",
  "tempfile",
@@ -4434,7 +4434,7 @@ dependencies = [
 
 [[package]]
 name = "zenvy-core"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -4445,7 +4445,7 @@ dependencies = [
 
 [[package]]
 name = "zenvy-gui"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "eframe",
  "png",
@@ -4456,7 +4456,7 @@ dependencies = [
 
 [[package]]
 name = "zenvy-hyprland"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -4468,14 +4468,14 @@ dependencies = [
 
 [[package]]
 name = "zenvy-icons"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "tempfile",
 ]
 
 [[package]]
 name = "zenvy-input"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "evdev",
  "serde_json",
@@ -4487,7 +4487,7 @@ dependencies = [
 
 [[package]]
 name = "zenvy-media"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "futures-util",
  "serde_json",
@@ -4501,7 +4501,7 @@ dependencies = [
 
 [[package]]
 name = "zenvy-net"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "axum",
  "axum-server",
@@ -4537,7 +4537,7 @@ dependencies = [
 
 [[package]]
 name = "zenvy-power"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "serde_json",
  "tempfile",
@@ -4548,7 +4548,7 @@ dependencies = [
 
 [[package]]
 name = "zenvy-profiler"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "rustix 1.1.6",
  "serde_json",
@@ -4560,7 +4560,7 @@ dependencies = [
 
 [[package]]
 name = "zenvy-proto"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -4569,7 +4569,7 @@ dependencies = [
 
 [[package]]
 name = "zenvy-screen"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "tempfile",
  "tokio",
@@ -4579,7 +4579,7 @@ dependencies = [
 
 [[package]]
 name = "zenvy-stream"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "opus",
  "tempfile",
@@ -4590,7 +4590,7 @@ dependencies = [
 
 [[package]]
 name = "zenvyd"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "clap",
  "if-addrs",
