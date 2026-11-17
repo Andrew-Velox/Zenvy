@@ -1,123 +1,82 @@
 //! `zenvy`: a small desktop window for the Zenvy agent. Pair a phone with a QR code, see who is connected, and switch each
 //! phone's permissions on or off. It is only a front end to the agent's local admin socket (the same interface as the
 //! `zenvyd` command line), so it has no power of its own and nothing here is reachable from the network.
+//! The look follows the Android app: the same colour tokens, tonal cards, pill buttons and line icons.
 
 mod admin;
+mod icons;
+mod theme;
 
 use admin::{Device, PairEvent, Pairing, Status};
-use eframe::egui::{self, Color32, CornerRadius, Margin, RichText, Stroke, Theme, Vec2};
+use eframe::egui::{
+    self, Align, Color32, CornerRadius, Layout, Margin, Rect, RichText, Sense, Theme, Vec2,
+};
+use icons::Icon;
 use std::sync::mpsc::{channel, Receiver, Sender};
 use std::time::{Duration, Instant};
+use theme::{bold, palette, Palette, ON_PRIMARY, PRIMARY};
 
 const LOGO: &[u8] = include_bytes!("../../../assets/logo/zenvy-icon-512.png");
-const ACCENT: Color32 = Color32::from_rgb(0x00, 0x7A, 0xFF);
 
-/// (permission, label, what it allows, asks for confirmation before it is switched on)
-const SCOPES: &[(&str, &str, &str, bool)] = &[
+/// (permission, label, icon, what it allows, asks for confirmation before it is switched on)
+const SCOPES: &[(&str, &str, Icon, &str, bool)] = &[
     (
         "screen",
         "Screen",
+        Icon::Screen,
         "See the PC screen and click through it",
         false,
     ),
     (
         "launch",
         "Apps",
+        Icon::Apps,
         "Open installed apps, on a new workspace if you like",
         false,
     ),
     (
         "listen",
         "Speaker",
+        Icon::Speaker,
         "Hear the PC's sound on the phone",
         false,
     ),
     (
         "clipboard",
         "Clipboard",
+        Icon::Clipboard,
         "Copy text between the phone and the PC",
         false,
     ),
-    ("files", "Files", "Send files to and from the PC", false),
+    (
+        "files",
+        "Files",
+        Icon::File,
+        "Send files to and from the PC",
+        false,
+    ),
     (
         "power",
         "Power",
+        Icon::Power,
         "Lock, sleep, restart and shut down the PC",
         true,
     ),
     (
         "unlock",
         "Unlock",
+        Icon::Unlock,
         "Type your password on the lock screen",
         true,
     ),
     (
         "exec",
         "Actions",
+        Icon::Bolt,
         "Run the actions from your config file",
         true,
     ),
 ];
-
-struct Palette {
-    bg: Color32,
-    card: Color32,
-    text: Color32,
-    muted: Color32,
-    line: Color32,
-    danger: Color32,
-    ok: Color32,
-}
-
-fn palette(dark: bool) -> Palette {
-    if dark {
-        Palette {
-            bg: Color32::from_rgb(0x1D, 0x1D, 0x1F),
-            card: Color32::from_rgb(0x2B, 0x2B, 0x2D),
-            text: Color32::from_rgb(0xF5, 0xF5, 0xF7),
-            muted: Color32::from_rgb(0xAA, 0xAA, 0xAA),
-            line: Color32::from_rgb(0x44, 0x44, 0x48),
-            danger: Color32::from_rgb(0xFF, 0x6B, 0x63),
-            ok: Color32::from_rgb(0x32, 0xD7, 0x4B),
-        }
-    } else {
-        Palette {
-            bg: Color32::from_rgb(0xF5, 0xF5, 0xF7),
-            card: Color32::WHITE,
-            text: Color32::from_rgb(0x1D, 0x1D, 0x1F),
-            muted: Color32::from_rgb(0x63, 0x63, 0x68),
-            line: Color32::from_rgb(0xD8, 0xD8, 0xDD),
-            danger: Color32::from_rgb(0xD7, 0x00, 0x15),
-            ok: Color32::from_rgb(0x1F, 0xA8, 0x3A),
-        }
-    }
-}
-
-fn visuals(dark: bool) -> egui::Visuals {
-    let p = palette(dark);
-    let mut v = if dark {
-        egui::Visuals::dark()
-    } else {
-        egui::Visuals::light()
-    };
-    v.panel_fill = p.bg;
-    v.window_fill = p.card;
-    v.extreme_bg_color = p.card;
-    v.override_text_color = Some(p.text);
-    v.selection.bg_fill = ACCENT;
-    v.hyperlink_color = ACCENT;
-    v.widgets.noninteractive.bg_stroke = Stroke::new(1.0, p.line);
-    for w in [
-        &mut v.widgets.inactive,
-        &mut v.widgets.hovered,
-        &mut v.widgets.active,
-    ] {
-        w.corner_radius = CornerRadius::same(14);
-    }
-    v.widgets.inactive.bg_fill = p.card;
-    v.widgets.inactive.weak_bg_fill = p.card;
-    v
-}
 
 enum Msg {
     Poll(Result<(Status, Vec<Device>), String>),
@@ -201,15 +160,146 @@ fn host_only(address: &str) -> &str {
         .trim_end_matches('/')
 }
 
+fn qr_modules(url: &str) -> Option<(usize, Vec<bool>)> {
+    let code = qrcode::QrCode::new(url.as_bytes()).ok()?;
+    let n = code.width();
+    Some((
+        n,
+        code.to_colors()
+            .into_iter()
+            .map(|c| c == qrcode::Color::Dark)
+            .collect(),
+    ))
+}
+
+// ---------------------------------------------------------------------------------------------------------- widgets
+
+#[derive(Clone, Copy, PartialEq)]
+enum Look {
+    Primary,
+    Tonal,
+    Danger,
+}
+
+/// A fully rounded 46 px button, like the Android app's.
+fn pill(ui: &mut egui::Ui, label: &str, look: Look, full: bool) -> egui::Response {
+    let p = palette(ui.visuals().dark_mode);
+    let (fill, fg) = match look {
+        Look::Primary => (PRIMARY, ON_PRIMARY),
+        Look::Tonal => (p.secondary, p.on_surface),
+        Look::Danger => (
+            p.error,
+            if ui.visuals().dark_mode {
+                Color32::BLACK
+            } else {
+                Color32::WHITE
+            },
+        ),
+    };
+    let b = egui::Button::new(RichText::new(label).family(bold()).size(15.0).color(fg))
+        .fill(fill)
+        .corner_radius(CornerRadius::same(23));
+    if full {
+        ui.add_sized([ui.available_width(), 46.0], b)
+    } else {
+        ui.add(b.min_size(Vec2::new(0.0, 46.0)))
+    }
+}
+
+/// A tonal rounded block.
+fn card(ui: &mut egui::Ui, fill: Color32, add: impl FnOnce(&mut egui::Ui)) {
+    egui::Frame::new()
+        .fill(fill)
+        .corner_radius(CornerRadius::same(22))
+        .inner_margin(Margin::same(18))
+        .show(ui, |ui| {
+            ui.set_width(ui.available_width());
+            add(ui)
+        });
+}
+
+/// A round tonal background with an icon in it.
+fn disc(ui: &mut egui::Ui, size: f32, fill: Color32, icon: Icon, color: Color32) {
+    let (rect, _) = ui.allocate_exact_size(Vec2::splat(size), Sense::hover());
+    ui.painter().circle_filled(rect.center(), size / 2.0, fill);
+    icons::paint(
+        ui.painter(),
+        Rect::from_center_size(rect.center(), Vec2::splat(size * 0.5)),
+        icon,
+        color,
+    );
+}
+
+/// A small monospace pill for an address.
+fn address_chip(ui: &mut egui::Ui, text: &str, p: &Palette) {
+    egui::Frame::new()
+        .fill(p.container_high)
+        .corner_radius(CornerRadius::same(10))
+        .inner_margin(Margin::symmetric(10, 4))
+        .show(ui, |ui| {
+            ui.label(
+                RichText::new(text)
+                    .monospace()
+                    .size(13.5)
+                    .color(p.on_surface),
+            );
+        });
+}
+
+fn status_dot(ui: &mut egui::Ui, color: Color32) {
+    let (rect, _) = ui.allocate_exact_size(Vec2::splat(10.0), Sense::hover());
+    ui.painter().circle_filled(rect.center(), 4.0, color);
+}
+
+/// A toggle that reads like the Android app's tonal chips: filled with the accent and a check when it is on.
+fn chip(ui: &mut egui::Ui, label: &str, icon: Icon, on: bool, p: &Palette) -> egui::Response {
+    let font = egui::FontId::new(14.5, bold());
+    let color = if on { ON_PRIMARY } else { p.on_surface };
+    let galley = ui.painter().layout_no_wrap(label.to_string(), font, color);
+    let size = Vec2::new(14.0 + 18.0 + 7.0 + galley.size().x + 14.0, 36.0);
+    let (rect, resp) = ui.allocate_exact_size(size, Sense::click());
+    let fill = if on {
+        PRIMARY
+    } else if resp.hovered() {
+        p.container_high
+    } else {
+        p.secondary
+    };
+    ui.painter().rect_filled(rect, CornerRadius::same(18), fill);
+    let icon_rect = Rect::from_min_size(
+        egui::pos2(rect.min.x + 14.0, rect.center().y - 9.0),
+        Vec2::splat(18.0),
+    );
+    icons::paint(
+        ui.painter(),
+        icon_rect,
+        if on { Icon::Check } else { icon },
+        if on { ON_PRIMARY } else { p.variant },
+    );
+    ui.painter().galley(
+        egui::pos2(
+            rect.min.x + 14.0 + 18.0 + 7.0,
+            rect.center().y - galley.size().y / 2.0,
+        ),
+        galley,
+        color,
+    );
+    resp.on_hover_cursor(egui::CursorIcon::PointingHand)
+}
+
+// ---------------------------------------------------------------------------------------------------------- app
+
 impl ZenvyApp {
     fn new(cc: &eframe::CreationContext<'_>) -> Self {
-        cc.egui_ctx.set_visuals_of(Theme::Light, visuals(false));
-        cc.egui_ctx.set_visuals_of(Theme::Dark, visuals(true));
+        cc.egui_ctx
+            .set_visuals_of(Theme::Light, theme::visuals(false));
+        cc.egui_ctx
+            .set_visuals_of(Theme::Dark, theme::visuals(true));
+        theme::install_fonts(&cc.egui_ctx);
         cc.egui_ctx.all_styles_mut(|s| {
             s.spacing.item_spacing = Vec2::new(10.0, 10.0);
-            s.spacing.button_padding = Vec2::new(14.0, 8.0);
-            s.text_styles
-                .insert(egui::TextStyle::Heading, egui::FontId::proportional(22.0));
+            s.spacing.button_padding = Vec2::new(18.0, 10.0);
+            s.spacing.scroll.bar_width = 6.0;
             s.text_styles
                 .insert(egui::TextStyle::Body, egui::FontId::proportional(15.0));
             s.text_styles
@@ -335,56 +425,6 @@ impl ZenvyApp {
     }
 }
 
-fn qr_modules(url: &str) -> Option<(usize, Vec<bool>)> {
-    let code = qrcode::QrCode::new(url.as_bytes()).ok()?;
-    let n = code.width();
-    Some((
-        n,
-        code.to_colors()
-            .into_iter()
-            .map(|c| c == qrcode::Color::Dark)
-            .collect(),
-    ))
-}
-
-fn card(ui: &mut egui::Ui, add: impl FnOnce(&mut egui::Ui)) {
-    let p = palette(ui.visuals().dark_mode);
-    egui::Frame::new()
-        .fill(p.card)
-        .stroke(Stroke::new(1.0, p.line))
-        .corner_radius(CornerRadius::same(18))
-        .inner_margin(Margin::same(16))
-        .show(ui, |ui| {
-            ui.set_width(ui.available_width());
-            add(ui)
-        });
-}
-
-fn dot(ui: &mut egui::Ui, color: Color32) {
-    let (rect, _) = ui.allocate_exact_size(Vec2::splat(10.0), egui::Sense::hover());
-    ui.painter().circle_filled(rect.center(), 4.5, color);
-}
-
-fn primary(text: &str) -> egui::Button<'static> {
-    egui::Button::new(
-        RichText::new(text.to_string())
-            .color(Color32::WHITE)
-            .strong(),
-    )
-    .fill(ACCENT)
-    .corner_radius(CornerRadius::same(22))
-    .min_size(Vec2::new(0.0, 40.0))
-}
-
-fn quiet(ui: &egui::Ui, text: &str) -> egui::Button<'static> {
-    let p = palette(ui.visuals().dark_mode);
-    egui::Button::new(RichText::new(text.to_string()).color(p.text))
-        .fill(p.card)
-        .stroke(Stroke::new(1.0, p.line))
-        .corner_radius(CornerRadius::same(22))
-        .min_size(Vec2::new(0.0, 40.0))
-}
-
 impl eframe::App for ZenvyApp {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         self.drain();
@@ -401,22 +441,23 @@ impl eframe::App for ZenvyApp {
         }
         let p = palette(ui.visuals().dark_mode);
         egui::CentralPanel::default()
-            .frame(
-                egui::Frame::new()
-                    .fill(p.bg)
-                    .inner_margin(Margin::symmetric(20, 16)),
-            )
+            .frame(egui::Frame::new().fill(p.surface).inner_margin(Margin {
+                left: 24,
+                right: 24,
+                top: 20,
+                bottom: 20,
+            }))
             .show(ui, |ui| {
-                self.header(ui);
-                ui.add_space(6.0);
+                self.header(ui, &p);
+                ui.add_space(8.0);
                 match &self.view {
-                    View::Home => self.home(ui, &ctx),
-                    View::Pair(_) => self.pairing(ui, &ctx),
+                    View::Home => self.home(ui, &ctx, &p),
+                    View::Pair(_) => self.pairing(ui, &ctx, &p),
                 }
                 if let Some((text, _)) = &self.notice {
-                    ui.add_space(8.0);
-                    card(ui, |ui| {
-                        ui.label(RichText::new(text.clone()));
+                    ui.add_space(6.0);
+                    card(ui, p.container_high, |ui| {
+                        ui.label(RichText::new(text.clone()).size(14.5));
                     });
                 }
             });
@@ -424,103 +465,146 @@ impl eframe::App for ZenvyApp {
 }
 
 impl ZenvyApp {
-    fn header(&self, ui: &mut egui::Ui) {
+    fn header(&self, ui: &mut egui::Ui, p: &Palette) {
         ui.horizontal(|ui| {
-            ui.image((self.logo.id(), Vec2::splat(30.0)));
-            ui.label(RichText::new("Zenvy").heading().strong());
+            ui.add(
+                egui::Image::new((self.logo.id(), Vec2::splat(38.0)))
+                    .corner_radius(CornerRadius::same(10)),
+            );
+            ui.add_space(4.0);
+            ui.label(RichText::new("Zenvy").family(bold()).size(27.0));
+            if let Some(s) = &self.status {
+                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                    ui.label(
+                        RichText::new(format!("v{}", s.version))
+                            .size(12.5)
+                            .color(p.variant),
+                    );
+                });
+            }
         });
     }
 
-    fn status_card(&mut self, ui: &mut egui::Ui) {
-        let p = palette(ui.visuals().dark_mode);
-        card(ui, |ui| match (&self.status, &self.error) {
+    fn status_card(&mut self, ui: &mut egui::Ui, p: &Palette) {
+        card(ui, p.container, |ui| match (&self.status, &self.error) {
             (Some(s), _) => {
                 ui.horizontal(|ui| {
-                    dot(ui, p.ok);
-                    ui.label(RichText::new("Agent running").strong());
-                    if s.locked {
-                        ui.label(RichText::new("PC locked").small().color(p.muted));
-                    }
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        ui.label(
-                            RichText::new(format!("v{}", s.version))
-                                .small()
-                                .color(p.muted),
-                        );
+                    disc(ui, 46.0, p.secondary, Icon::Check, PRIMARY);
+                    ui.add_space(4.0);
+                    ui.vertical(|ui| {
+                        ui.spacing_mut().item_spacing.y = 5.0;
+                        ui.horizontal(|ui| {
+                            ui.label(RichText::new("Agent running").family(bold()).size(16.5));
+                            if s.locked {
+                                ui.label(RichText::new("PC locked").size(12.5).color(p.variant));
+                            }
+                        });
+                        address_chip(ui, host_only(&s.address), p);
                     });
                 });
-                ui.label(
-                    RichText::new(host_only(&s.address))
-                        .monospace()
-                        .color(p.muted),
-                );
             }
             (None, err) => {
                 ui.horizontal(|ui| {
-                    dot(ui, p.danger);
-                    ui.label(RichText::new("Agent not running").strong());
+                    disc(ui, 46.0, p.secondary, Icon::WifiOff, p.error);
+                    ui.add_space(4.0);
+                    ui.vertical(|ui| {
+                        ui.label(RichText::new("Agent not running").family(bold()).size(16.5));
+                        if self.loaded {
+                            ui.label(
+                                RichText::new(err.clone().unwrap_or_default())
+                                    .size(13.5)
+                                    .color(p.variant),
+                            );
+                        }
+                    });
                 });
-                if self.loaded {
-                    ui.label(RichText::new(err.clone().unwrap_or_default()).color(p.muted));
+                ui.add_space(2.0);
+                if pill(ui, "Start the agent", Look::Primary, true).clicked() {
+                    self.start_note = Some(match std::process::Command::new("systemctl").args(["--user", "start", "zenvyd"]).status() {
+                        Ok(s) if s.success() => "Starting…".into(),
+                        _ => "That did not work. Run zenvyd serve in a terminal, or install the service with packaging/install.sh.".into(),
+                    });
+                    let _ = self.poke.send(());
                 }
-                ui.horizontal(|ui| {
-                    if ui.add(primary("Start the agent")).clicked() {
-                        self.start_note = Some(match std::process::Command::new("systemctl").args(["--user", "start", "zenvyd"]).status() {
-                            Ok(s) if s.success() => "Starting…".into(),
-                            _ => "That did not work. Run zenvyd serve in a terminal, or install the service with packaging/install.sh.".into(),
-                        });
-                        let _ = self.poke.send(());
-                    }
-                });
                 if let Some(n) = &self.start_note {
-                    ui.label(RichText::new(n.clone()).small().color(p.muted));
+                    ui.label(RichText::new(n.clone()).size(13.0).color(p.variant));
                 }
             }
         });
     }
 
-    fn home(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
-        self.status_card(ui);
-        let p = palette(ui.visuals().dark_mode);
+    fn home(&mut self, ui: &mut egui::Ui, ctx: &egui::Context, p: &Palette) {
+        self.status_card(ui, p);
+        ui.add_space(6.0);
         let running = self.status.is_some();
         ui.horizontal(|ui| {
-            ui.label(RichText::new("Phones").strong().size(17.0));
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if ui.add_enabled(running, primary("Pair a phone")).clicked() {
-                    self.start_pairing(ctx);
-                }
-            });
+            ui.label(RichText::new("Phones").family(bold()).size(18.0));
+            if !self.devices.is_empty() {
+                ui.label(
+                    RichText::new(self.devices.len().to_string())
+                        .size(14.0)
+                        .color(p.variant),
+                );
+            }
         });
+        let room = (ui.available_height() - 62.0).max(80.0);
         egui::ScrollArea::vertical()
+            .max_height(room)
             .auto_shrink([false, false])
             .show(ui, |ui| {
                 if running && self.devices.is_empty() {
-                    card(ui, |ui| {
+                    card(ui, p.container, |ui| {
                         ui.vertical_centered(|ui| {
-                            ui.add_space(10.0);
-                            ui.label(RichText::new("No phones yet").size(18.0).strong());
-                            ui.label(RichText::new("Pair one to control this PC.").color(p.muted));
-                            ui.add_space(10.0);
+                            ui.add_space(14.0);
+                            disc(ui, 64.0, p.secondary, Icon::Phone, PRIMARY);
+                            ui.add_space(6.0);
+                            ui.label(RichText::new("No phones yet").family(bold()).size(18.0));
+                            ui.label(
+                                RichText::new("Pair one to control this PC.").color(p.variant),
+                            );
+                            ui.add_space(14.0);
                         });
                     });
                 }
                 for d in self.devices.clone() {
-                    self.phone_card(ui, ctx, &d);
+                    self.phone_card(ui, ctx, &d, p);
                 }
-                ui.add_space(6.0);
             });
+        ui.add_space(4.0);
+        if ui
+            .add_enabled_ui(running, |ui| pill(ui, "Pair a phone", Look::Primary, true))
+            .inner
+            .clicked()
+        {
+            self.start_pairing(ctx);
+        }
     }
 
-    fn phone_card(&mut self, ui: &mut egui::Ui, ctx: &egui::Context, d: &Device) {
-        let p = palette(ui.visuals().dark_mode);
-        card(ui, |ui| {
+    fn phone_card(&mut self, ui: &mut egui::Ui, ctx: &egui::Context, d: &Device, p: &Palette) {
+        card(ui, p.container, |ui| {
             ui.horizontal(|ui| {
-                dot(ui, if d.online { p.ok } else { p.line });
-                ui.label(RichText::new(&d.name).strong().size(16.5));
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                disc(ui, 46.0, p.secondary, Icon::Phone, PRIMARY);
+                ui.add_space(4.0);
+                ui.vertical(|ui| {
+                    ui.spacing_mut().item_spacing.y = 3.0;
+                    ui.label(RichText::new(&d.name).family(bold()).size(17.0));
+                    ui.horizontal(|ui| {
+                        status_dot(ui, if d.online { p.ok } else { p.outline });
+                        let seen = if d.online {
+                            "Connected now".to_string()
+                        } else {
+                            d.last_seen
+                                .map(|t| format!("Last seen {}", ago(now_secs().saturating_sub(t))))
+                                .unwrap_or_else(|| "Never connected".into())
+                        };
+                        ui.label(RichText::new(seen).size(13.0).color(p.variant));
+                    });
+                });
+                ui.with_layout(Layout::right_to_left(Align::Min), |ui| {
                     if ui
                         .add(
-                            egui::Button::new(RichText::new("Remove").color(p.danger)).frame(false),
+                            egui::Button::new(RichText::new("Remove").size(14.0).color(p.error))
+                                .frame(false),
                         )
                         .clicked()
                     {
@@ -528,55 +612,32 @@ impl ZenvyApp {
                     }
                 });
             });
-            let seen = if d.online {
-                "Connected now".to_string()
-            } else {
-                d.last_seen
-                    .map(|t| format!("Last seen {}", ago(now_secs().saturating_sub(t))))
-                    .unwrap_or_else(|| "Never connected".into())
-            };
-            ui.label(RichText::new(seen).small().color(p.muted));
 
             if self.confirm_remove.as_deref() == Some(d.id.as_str()) {
-                ui.separator();
-                ui.label(format!("Remove {}? It will have to pair again.", d.name));
-                ui.horizontal(|ui| {
-                    if ui
-                        .add(
-                            egui::Button::new(RichText::new("Remove").color(Color32::WHITE))
-                                .fill(p.danger)
-                                .corner_radius(CornerRadius::same(20)),
-                        )
-                        .clicked()
-                    {
-                        let id = d.id.clone();
-                        self.confirm_remove = None;
-                        self.act(ctx, move || {
-                            admin::revoke(&id).map(|_| "Removed".to_string())
-                        });
-                    }
-                    if ui.add(quiet(ui, "Cancel")).clicked() {
-                        self.confirm_remove = None;
-                    }
+                card(ui, p.container_high, |ui| {
+                    ui.label(format!("Remove {}? It will have to pair again.", d.name));
+                    ui.horizontal(|ui| {
+                        if pill(ui, "Remove", Look::Danger, false).clicked() {
+                            let id = d.id.clone();
+                            self.confirm_remove = None;
+                            self.act(ctx, move || {
+                                admin::revoke(&id).map(|_| "Removed".to_string())
+                            });
+                        }
+                        if pill(ui, "Cancel", Look::Tonal, false).clicked() {
+                            self.confirm_remove = None;
+                        }
+                    });
                 });
             }
 
             ui.add_space(4.0);
-            ui.label(RichText::new("Allowed").small().color(p.muted));
+            ui.label(RichText::new("Allowed").size(13.0).color(p.variant));
             ui.horizontal_wrapped(|ui| {
-                for (scope, label, help, sensitive) in SCOPES {
+                ui.spacing_mut().item_spacing = Vec2::new(8.0, 8.0);
+                for (scope, label, icon, help, sensitive) in SCOPES {
                     let on = d.scopes.iter().any(|s| s == scope);
-                    let (fill, text, stroke) = if on {
-                        (ACCENT, Color32::WHITE, Stroke::NONE)
-                    } else {
-                        (Color32::TRANSPARENT, p.text, Stroke::new(1.0, p.line))
-                    };
-                    let b = egui::Button::new(RichText::new(*label).color(text))
-                        .fill(fill)
-                        .stroke(stroke)
-                        .corner_radius(CornerRadius::same(16))
-                        .min_size(Vec2::new(0.0, 32.0));
-                    if ui.add(b).on_hover_text(*help).clicked() {
+                    if chip(ui, label, *icon, on, p).on_hover_text(*help).clicked() {
                         if on {
                             let (id, sc) = (d.id.clone(), scope.to_string());
                             self.act(ctx, move || {
@@ -595,130 +656,209 @@ impl ZenvyApp {
             });
             if let Some((id, scope)) = self.confirm_grant.clone() {
                 if id == d.id {
-                    let (_, label, help, _) = SCOPES
+                    let (_, label, _, help, _) = SCOPES
                         .iter()
                         .find(|s| s.0 == scope)
                         .copied()
-                        .unwrap_or(("", "", "", false));
-                    ui.separator();
-                    ui.label(format!("Let {} use {}? {}.", d.name, label, help));
-                    ui.horizontal(|ui| {
-                        if ui.add(primary("Allow")).clicked() {
-                            self.confirm_grant = None;
-                            self.act(ctx, move || {
-                                admin::set_scope(&id, &scope, true).map(|_| String::new())
-                            });
-                        }
-                        if ui.add(quiet(ui, "Cancel")).clicked() {
-                            self.confirm_grant = None;
-                        }
+                        .unwrap_or(("", "", Icon::Check, "", false));
+                    card(ui, p.container_high, |ui| {
+                        ui.label(format!("Let {} use {}? {}.", d.name, label, help));
+                        ui.horizontal(|ui| {
+                            if pill(ui, "Allow", Look::Primary, false).clicked() {
+                                self.confirm_grant = None;
+                                self.act(ctx, move || {
+                                    admin::set_scope(&id, &scope, true).map(|_| String::new())
+                                });
+                            }
+                            if pill(ui, "Cancel", Look::Tonal, false).clicked() {
+                                self.confirm_grant = None;
+                            }
+                        });
                     });
                 }
             }
             ui.label(
                 RichText::new("Always on: touchpad, keyboard, windows, volume and brightness.")
-                    .small()
-                    .color(p.muted),
+                    .size(12.5)
+                    .color(p.variant),
             );
         });
     }
 
-    fn pairing(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
-        let p = palette(ui.visuals().dark_mode);
+    fn pairing(&mut self, ui: &mut egui::Ui, ctx: &egui::Context, p: &Palette) {
         let mut back = false;
         let mut approve: Option<bool> = None;
         let mut copy: Option<String> = None;
         if let View::Pair(st) = &self.view {
-            ui.label(RichText::new("Pair a phone").size(18.0).strong());
-            card(ui, |ui| {
-                if let Some(e) = &st.error {
-                    ui.label(RichText::new(e.clone()).color(p.danger));
-                } else if let Some(r) = &st.result {
-                    let (title, sub) = match r.as_str() {
-                        "approved" => ("Paired", "The phone can now control this PC."),
-                        "denied" => ("Not paired", "You did not approve the phone."),
-                        "expired" => ("The code expired", "Start again to get a new one."),
-                        _ => ("Cancelled", ""),
-                    };
-                    ui.vertical_centered(|ui| {
-                        ui.add_space(8.0);
-                        ui.label(RichText::new(title).size(20.0).strong());
-                        if !sub.is_empty() {
-                            ui.label(RichText::new(sub).color(p.muted));
-                        }
-                        ui.add_space(8.0);
-                    });
-                } else if let Some((name, code)) = &st.approval {
-                    ui.vertical_centered(|ui| {
-                        ui.add_space(6.0);
-                        ui.label(
-                            RichText::new(format!("{name} wants to pair"))
-                                .size(18.0)
-                                .strong(),
-                        );
-                        ui.label(
-                            RichText::new("Approve only if the phone shows this code")
-                                .color(p.muted),
-                        );
-                        ui.add_space(6.0);
-                        ui.label(
-                            RichText::new(
-                                code.chars().map(String::from).collect::<Vec<_>>().join(" "),
-                            )
-                            .size(44.0)
-                            .strong()
-                            .monospace(),
-                        );
-                        ui.add_space(6.0);
-                    });
-                    ui.horizontal(|ui| {
-                        if ui.add(primary("Approve")).clicked() {
+            ui.label(RichText::new("Pair a phone").family(bold()).size(22.0));
+            let finished = st.result.is_some() || st.error.is_some();
+            egui::ScrollArea::vertical()
+                .auto_shrink([false, true])
+                .max_height((ui.available_height() - 62.0).max(120.0))
+                .show(ui, |ui| {
+                    if let Some(e) = &st.error {
+                        card(ui, p.container, |ui| {
+                            ui.vertical_centered(|ui| {
+                                ui.add_space(10.0);
+                                disc(ui, 64.0, p.secondary, Icon::WifiOff, p.error);
+                                ui.add_space(6.0);
+                                ui.label(RichText::new(e.clone()).color(p.variant));
+                                ui.add_space(10.0);
+                            });
+                        });
+                    } else if let Some(r) = &st.result {
+                        let (title, sub, icon, tint) = match r.as_str() {
+                            "approved" => (
+                                "Paired",
+                                "The phone can now control this PC.",
+                                Icon::Check,
+                                PRIMARY,
+                            ),
+                            "denied" => (
+                                "Not paired",
+                                "You did not approve the phone.",
+                                Icon::Shield,
+                                p.error,
+                            ),
+                            "expired" => (
+                                "The code expired",
+                                "Start again to get a new one.",
+                                Icon::WifiOff,
+                                p.variant,
+                            ),
+                            _ => ("Cancelled", "", Icon::Shield, p.variant),
+                        };
+                        card(ui, p.container, |ui| {
+                            ui.vertical_centered(|ui| {
+                                ui.add_space(14.0);
+                                disc(ui, 72.0, p.secondary, icon, tint);
+                                ui.add_space(8.0);
+                                ui.label(RichText::new(title).family(bold()).size(21.0));
+                                if !sub.is_empty() {
+                                    ui.label(RichText::new(sub).color(p.variant));
+                                }
+                                ui.add_space(14.0);
+                            });
+                        });
+                    } else if let Some((name, code)) = &st.approval {
+                        card(ui, p.container, |ui| {
+                            ui.vertical_centered(|ui| {
+                                ui.add_space(8.0);
+                                disc(ui, 56.0, p.secondary, Icon::Phone, PRIMARY);
+                                ui.add_space(4.0);
+                                ui.label(
+                                    RichText::new(format!("{name} wants to pair"))
+                                        .family(bold())
+                                        .size(19.0),
+                                );
+                                ui.label(
+                                    RichText::new("Approve only if the phone shows this code")
+                                        .color(p.variant),
+                                );
+                                ui.add_space(8.0);
+                                ui.horizontal(|ui| {
+                                    let n = code.chars().count() as f32;
+                                    ui.add_space(
+                                        ((ui.available_width() - n * 60.0 - (n - 1.0) * 8.0) / 2.0)
+                                            .max(0.0),
+                                    );
+                                    ui.spacing_mut().item_spacing.x = 8.0;
+                                    for ch in code.chars() {
+                                        let (rect, _) = ui.allocate_exact_size(
+                                            Vec2::new(60.0, 74.0),
+                                            Sense::hover(),
+                                        );
+                                        ui.painter().rect_filled(
+                                            rect,
+                                            CornerRadius::same(16),
+                                            p.container_high,
+                                        );
+                                        ui.painter().text(
+                                            rect.center(),
+                                            egui::Align2::CENTER_CENTER,
+                                            ch,
+                                            egui::FontId::new(38.0, bold()),
+                                            p.on_surface,
+                                        );
+                                    }
+                                });
+                                ui.add_space(8.0);
+                            });
+                        });
+                        ui.add_space(4.0);
+                        if pill(ui, "Approve", Look::Primary, true).clicked() {
                             approve = Some(true);
                         }
-                        if ui.add(quiet(ui, "Deny")).clicked() {
+                        if pill(ui, "Deny", Look::Tonal, true).clicked() {
                             approve = Some(false);
                         }
-                    });
-                } else if let Some((n, modules)) = &st.qr {
-                    let px = (300.0 / (*n as f32 + 8.0)).floor().max(3.0);
-                    let side = px * (*n as f32 + 8.0);
-                    ui.vertical_centered(|ui| {
-                        let (rect, _) =
-                            ui.allocate_exact_size(Vec2::splat(side), egui::Sense::hover());
-                        ui.painter()
-                            .rect_filled(rect, CornerRadius::same(14), Color32::WHITE);
-                        for y in 0..*n {
-                            for x in 0..*n {
-                                if modules[y * n + x] {
-                                    let o = rect.min
-                                        + Vec2::new((x as f32 + 4.0) * px, (y as f32 + 4.0) * px);
-                                    ui.painter().rect_filled(
-                                        egui::Rect::from_min_size(o, Vec2::splat(px)),
-                                        0.0,
-                                        Color32::BLACK,
-                                    );
+                    } else if let Some((n, modules)) = &st.qr {
+                        let px = (252.0 / (*n as f32 + 6.0)).floor().max(3.0);
+                        let side = px * (*n as f32 + 6.0);
+                        ui.vertical_centered(|ui| {
+                            let (rect, _) =
+                                ui.allocate_exact_size(Vec2::splat(side), Sense::hover());
+                            ui.painter()
+                                .rect_filled(rect, CornerRadius::same(22), Color32::WHITE);
+                            for y in 0..*n {
+                                for x in 0..*n {
+                                    if modules[y * n + x] {
+                                        let o = rect.min
+                                            + Vec2::new(
+                                                (x as f32 + 3.0) * px,
+                                                (y as f32 + 3.0) * px,
+                                            );
+                                        ui.painter().rect_filled(
+                                            Rect::from_min_size(o, Vec2::splat(px)),
+                                            0.0,
+                                            Color32::BLACK,
+                                        );
+                                    }
                                 }
                             }
+                        });
+                        ui.add_space(4.0);
+                        for (i, text) in [
+                            "Open the Zenvy app on your phone",
+                            "Tap Scan QR code and point it here",
+                        ]
+                        .iter()
+                        .enumerate()
+                        {
+                            ui.horizontal(|ui| {
+                                let (rect, _) =
+                                    ui.allocate_exact_size(Vec2::splat(30.0), Sense::hover());
+                                ui.painter().circle_filled(rect.center(), 15.0, p.secondary);
+                                ui.painter().text(
+                                    rect.center(),
+                                    egui::Align2::CENTER_CENTER,
+                                    i + 1,
+                                    egui::FontId::new(14.5, bold()),
+                                    PRIMARY,
+                                );
+                                ui.add_space(4.0);
+                                ui.label(RichText::new(*text).size(15.5));
+                            });
                         }
-                    });
-                    ui.add_space(4.0);
-                    ui.label(RichText::new("1  Open the Zenvy app on your phone").color(p.text));
-                    ui.label(RichText::new("2  Tap Scan QR code and point it here").color(p.text));
-                    if let Some((url, ttl)) = &st.link {
-                        let left = ttl.saturating_sub(st.started.elapsed().as_secs());
-                        ui.horizontal(|ui| {
-                            ui.label(
-                                RichText::new(format!("Valid for {}:{:02}", left / 60, left % 60))
-                                    .small()
-                                    .color(p.muted),
-                            );
-                            ui.with_layout(
-                                egui::Layout::right_to_left(egui::Align::Center),
-                                |ui| {
+                        if let Some((url, ttl)) = &st.link {
+                            let left = ttl.saturating_sub(st.started.elapsed().as_secs());
+                            ui.horizontal(|ui| {
+                                ui.label(
+                                    RichText::new(format!(
+                                        "Valid for {}:{:02}",
+                                        left / 60,
+                                        left % 60
+                                    ))
+                                    .size(13.0)
+                                    .color(p.variant),
+                                );
+                                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                                     if ui
                                         .add(
                                             egui::Button::new(
-                                                RichText::new("Copy link").small().color(ACCENT),
+                                                RichText::new("Copy link")
+                                                    .size(13.5)
+                                                    .color(PRIMARY),
                                             )
                                             .frame(false),
                                         )
@@ -729,24 +869,31 @@ impl ZenvyApp {
                                     {
                                         copy = Some(url.clone());
                                     }
-                                },
-                            );
+                                });
+                            });
+                        }
+                    } else {
+                        card(ui, p.container, |ui| {
+                            ui.vertical_centered(|ui| {
+                                ui.add_space(28.0);
+                                ui.label(RichText::new("Starting…").color(p.variant));
+                                ui.add_space(28.0);
+                            });
                         });
                     }
-                } else {
-                    ui.vertical_centered(|ui| {
-                        ui.add_space(24.0);
-                        ui.label(RichText::new("Starting…").color(p.muted));
-                        ui.add_space(24.0);
-                    });
-                }
-            });
-            let finished = st.result.is_some() || st.error.is_some();
-            if ui
-                .add(quiet(ui, if finished { "Done" } else { "Cancel" }))
+                });
+            if st.approval.is_none() || finished {
+                ui.add_space(4.0);
+                if pill(
+                    ui,
+                    if finished { "Done" } else { "Cancel" },
+                    Look::Tonal,
+                    true,
+                )
                 .clicked()
-            {
-                back = true;
+                {
+                    back = true;
+                }
             }
         }
         if let Some(a) = approve {
@@ -775,8 +922,8 @@ fn main() -> eframe::Result {
     let mut viewport = egui::ViewportBuilder::default()
         .with_title("Zenvy")
         .with_app_id("zenvy")
-        .with_inner_size([460.0, 680.0])
-        .with_min_inner_size([380.0, 480.0]);
+        .with_inner_size([460.0, 700.0])
+        .with_min_inner_size([400.0, 520.0]);
     if let Some(i) = icon {
         viewport = viewport.with_icon(i);
     }
@@ -825,5 +972,28 @@ mod tests {
         for basic in ["view", "input", "windows", "system"] {
             assert!(!SCOPES.iter().any(|s| s.0 == basic));
         }
+    }
+
+    #[test]
+    fn the_colours_match_the_android_app() {
+        // res/values/colors.xml and values-night/colors.xml
+        let l = palette(false);
+        assert_eq!(
+            (l.surface, l.on_surface),
+            (
+                Color32::from_rgb(0xF5, 0xF5, 0xF7),
+                Color32::from_rgb(0x1D, 0x1D, 0x1F)
+            )
+        );
+        let d = palette(true);
+        assert_eq!(
+            (d.surface, d.container, d.variant),
+            (
+                Color32::from_rgb(0x1D, 0x1D, 0x1F),
+                Color32::from_rgb(0x2B, 0x2B, 0x2D),
+                Color32::from_rgb(0xAA, 0xAA, 0xAA)
+            )
+        );
+        assert_eq!(PRIMARY, Color32::from_rgb(0x00, 0x7A, 0xFF));
     }
 }
